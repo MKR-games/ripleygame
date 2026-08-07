@@ -629,6 +629,40 @@ function playDrumBeat(strong = false) {
   } catch {}
 }
 
+function playOutcomeCue(type) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = playDrumBeat.ctx || (playDrumBeat.ctx = new AudioCtx());
+    if (ctx.state === 'suspended') ctx.resume();
+    const makeTone = (freq, start, dur, gainValue, wave = 'triangle') => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = wave;
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, start + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + dur + 0.02);
+    };
+
+    const now = ctx.currentTime + 0.01;
+    if (type === 'caught') {
+      makeTone(180, now, 0.16, 0.22, 'sawtooth');
+      makeTone(240, now + 0.11, 0.18, 0.2, 'sawtooth');
+      makeTone(320, now + 0.22, 0.22, 0.18, 'triangle');
+      if (navigator.vibrate) navigator.vibrate([60, 40, 80, 40, 110]);
+    } else if (type === 'escape') {
+      makeTone(160, now, 0.28, 0.2, 'square');
+      makeTone(128, now + 0.14, 0.26, 0.17, 'square');
+      makeTone(96, now + 0.26, 0.3, 0.16, 'sine');
+      if (navigator.vibrate) navigator.vibrate([120, 50, 140]);
+    }
+  } catch {}
+}
+
 function revealStage(kicker, main, sub = '') {
   render(`
     <div class="panel handoff minimal-panel suspense-panel">
@@ -662,6 +696,8 @@ function showManualReveal(kicker, main, sub, buttonLabel, onClick, tone = '') {
       <div class="btn-row"><button id="manualRevealBtn" class="btn btn-primary" type="button">${esc(buttonLabel)}</button></div>
     </div>
   `, 'manual-reveal');
+  if (tone === 'tone-caught') playOutcomeCue('caught');
+  if (tone === 'tone-escape') playOutcomeCue('escape');
   document.getElementById('manualRevealBtn').addEventListener('click', onClick);
 }
 
@@ -675,11 +711,9 @@ function playModeOneResultReveal() {
     '판정 확인',
     () => runCountdown(() => {
       if (r.caught) {
-        showManualReveal('JUDGMENT', '검거 성공', `${ordinal(r.ripleyIndex)} 리플리 적발`, '정체 공개', () => {
-          runCountdown(() => showManualReveal('IDENTITY', '리플리', `${ordinal(r.ripleyIndex)} 검거`, '마지막 기회', showRipleyGuessHandoff, 'tone-caught'));
-        }, 'tone-caught');
+        showManualReveal('JUDGMENT', '검거 성공', `${ordinal(r.ripleyIndex)} 리플리 적발`, '마지막 기회', showRipleyGuessHandoff, 'tone-caught');
       } else if (r.topIndices.length === 1) {
-        showManualReveal('JUDGMENT', '검거 실패', `${ordinal(r.topIndices[0])} 시민 오지목`, '최종 결과 보기', showResult, 'tone-escape');
+        showManualReveal('JUDGMENT', '검거 실패', `${ordinal(r.topIndices[0])} 지목`, '최종 결과 보기', showResult, 'tone-escape');
       } else {
         showManualReveal('JUDGMENT', '검거 실패', '동률 · 리플리 생존', '최종 결과 보기', showResult, 'tone-escape');
       }
@@ -1150,12 +1184,12 @@ function playLifeResultReveal() {
     runCountdown(() => {
       if (top.length === 1) {
         const exposedIsRipley = lifeState.roles[top[0]] === 'ripley';
-        const role = exposedIsRipley ? '리플리' : '시민';
-        const sub = exposedIsRipley ? `${ordinal(top[0])} 적발` : `${ordinal(top[0])} 시민 오지목`;
         const tone = exposedIsRipley ? 'tone-caught' : 'tone-escape';
-        showManualReveal('JUDGMENT', exposedIsRipley ? '검거 성공' : '검거 실패', sub, '정체 공개', () => {
-          runCountdown(() => showManualReveal('IDENTITY', role, `${ordinal(top[0])}`, '최종 결과 보기', showLifeResult, tone));
-        }, tone);
+        if (exposedIsRipley) {
+          showManualReveal('JUDGMENT', '검거 성공', `${ordinal(top[0])} 적발`, '최종 결과 보기', showLifeResult, tone);
+        } else {
+          showManualReveal('JUDGMENT', '검거 실패', `${ordinal(top[0])} 지목`, '최종 결과 보기', showLifeResult, tone);
+        }
       } else {
         const includesRipley = top.includes(r.ripleyIndex);
         showManualReveal(
