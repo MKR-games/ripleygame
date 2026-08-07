@@ -27,6 +27,24 @@ if (WORD_PAIRS.length !== 100) {
   throw new Error(`단어 조합은 100개여야 합니다. 현재: ${WORD_PAIRS.length}`);
 }
 
+
+const LIFE_PROMPTS = [
+  '마라톤','번지점프','소개팅','해외여행','고백','이별','면접','아르바이트','지각','결석',
+  '전학','자취','이사','캠핑','등산','낚시','수영','스키','스노보드','서핑',
+  '스쿠버다이빙','스노클링','래프팅','카약','패러글라이딩','스카이다이빙','롤러코스터','워터파크','콘서트','페스티벌',
+  '클럽','노래방','방탈출','귀신의집','찜질방','PC방','밤샘','해돋이','기차여행','배낭여행',
+  '제주여행','유럽여행','혼자여행','운전','주차','렌터카','막차','첫차','택시','비행기',
+  '호캉스','게스트하우스','펜션','놀이공원','야시장','축제','수능','토익','시험','발표',
+  '팀플','공모전','대회','장학금','첫월급','퇴사','야근','회식','연애','짝사랑',
+  '장거리연애','재회','결혼식','축가','헌팅','미팅','소개팅앱','데이트','술게임','숙취',
+  '만취','금주','요리','베이킹','다이어트','헬스','PT','러닝','문신','피어싱',
+  '탈색','염색','셀프커트','중고거래','환불','오디션','팬미팅','사인회','브이로그','라이브방송'
+];
+
+if (LIFE_PROMPTS.length !== 100) {
+  throw new Error(`인생 조작단 제시어는 100개여야 합니다. 현재: ${LIFE_PROMPTS.length}`);
+}
+
 const screen = document.getElementById('screen');
 const homeBtn = document.getElementById('homeBtn');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
@@ -56,6 +74,21 @@ const state = {
   votes: [],
   currentVoter: 0,
   phase: 'menu',
+  result: null,
+  secretTimer: null
+};
+
+
+const lifeState = {
+  totalPlayers: 5,
+  players: [],
+  roles: [],
+  promptIndex: null,
+  prompt: '',
+  revealIndex: 0,
+  speakerIndex: 0,
+  votes: [],
+  currentVoter: 0,
   result: null,
   secretTimer: null
 };
@@ -187,6 +220,10 @@ function citizenIndices() {
   return state.roles.map((role, i) => role === 'citizen' ? i : -1).filter(i => i >= 0);
 }
 
+function ripleyIndices() {
+  return state.roles.map((role, i) => role === 'ripley' ? i : -1).filter(i => i >= 0);
+}
+
 function majorityThreshold() {
   return Math.floor(state.totalPlayers / 2) + 1;
 }
@@ -204,14 +241,15 @@ function showMenu() {
         <div class="game-title">리플리 – 시민을 속여라</div>
         <span class="card-action">플레이</span>
       </button>
-      <button class="game-card" type="button" disabled>
+      <button class="game-card game-card-play" id="lifeGame" type="button">
         <div class="game-kicker">GAME 02</div>
         <div class="game-title">리플리 – 인생 조작단</div>
-        <span class="badge-dev">개발 예정</span>
+        <span class="card-action">플레이</span>
       </button>
     </div>
   `, 'menu');
   document.getElementById('citizenGame').addEventListener('click', showIntro);
+  document.getElementById('lifeGame').addEventListener('click', showLifeIntro);
 }
 
 function showIntro() {
@@ -411,10 +449,10 @@ function showSpeaker() {
 function showSpeechComplete() {
   render(`
     <div class="panel handoff minimal-panel">
-      <span class="eyebrow">CONFESSION</span>
-      <div class="big-player">자수 시간</div>
-      <p class="handoff-note">한 명씩 비밀 선택합니다.</p>
-      <div class="micro-rule rule-pill">벌칙 · <b>자수한 리플리 + 자수하지 않은 시민</b></div>
+      <span class="eyebrow">POLITICS</span>
+      <div class="big-player">정치 시간</div>
+      <p class="handoff-note">한 명씩 “시민 같다”고 공개 지목하세요.</p>
+      <div class="micro-rule rule-pill"><b>거짓 지목 · 변호 · 자수 bluff 가능</b></div>
       <div class="btn-row">
         <button id="confessionStartBtn" class="btn btn-primary" type="button">자수 시작</button>
       </div>
@@ -498,7 +536,13 @@ function resolveConfessionRound() {
   const confessedCitizens = confessed.filter(i => state.roles[i] === 'citizen');
   const confessedRipleys = confessed.filter(i => state.roles[i] === 'ripley');
   const nonConfessedCitizens = citizenIndices().filter(i => !state.confessionAnswers[i]);
-  const penaltyIndices = [...confessedRipleys, ...nonConfessedCitizens].sort((a, b) => a - b);
+
+  // 시민만 자수했다면 더 이상 무승부가 아니다.
+  // 시민 진영의 완전한 자수 성공으로 처리하고 리플리 전원이 벌칙을 받는다.
+  const citizenOnlySuccess = confessedCitizens.length > 0 && confessedRipleys.length === 0;
+  const penaltyIndices = citizenOnlySuccess
+    ? ripleyIndices()
+    : [...confessedRipleys, ...nonConfessedCitizens].sort((a, b) => a - b);
 
   state.result = {
     type: 'confession-result',
@@ -506,6 +550,7 @@ function resolveConfessionRound() {
     confessedCitizens,
     confessedRipleys,
     nonConfessedCitizens,
+    citizenOnlySuccess,
     penaltyIndices
   };
   showResultReady('모든 자수 선택이 완료되었습니다');
@@ -607,7 +652,64 @@ function showResultReady(message) {
       </div>
     </div>
   `, 'result-ready');
-  document.getElementById('revealResultBtn').addEventListener('click', showResult);
+  document.getElementById('revealResultBtn').addEventListener('click', playModeOneResultReveal);
+}
+
+function playDrumBeat(strong = false) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = playDrumBeat.ctx || (playDrumBeat.ctx = new AudioCtx());
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(strong ? 92 : 78, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(42, ctx.currentTime + 0.18);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(strong ? 0.34 : 0.22, ctx.currentTime + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.24);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+  } catch {}
+}
+
+function revealStage(kicker, main, sub = '') {
+  render(`
+    <div class="panel handoff minimal-panel suspense-panel">
+      <span class="eyebrow">${esc(kicker)}</span>
+      <div class="suspense-main">${esc(main)}</div>
+      ${sub ? `<p class="handoff-note">${esc(sub)}</p>` : ''}
+      <div class="suspense-pulse" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+  `, 'result-reveal');
+}
+
+function runCountdown(finalFn) {
+  let n = 3;
+  const tick = () => {
+    revealStage('FINAL', String(n), '');
+    playDrumBeat(n === 1);
+    if (navigator.vibrate) navigator.vibrate(n === 1 ? 90 : 45);
+    n -= 1;
+    if (n > 0) setTimeout(tick, 620);
+    else setTimeout(finalFn, 760);
+  };
+  tick();
+}
+
+function playModeOneResultReveal() {
+  const r = state.result;
+  if (r.type === 'confession-result') {
+    revealStage('CONFESSION', `자수 ${r.confessed.length}명`, '정체를 확인합니다');
+    playDrumBeat();
+    setTimeout(() => runCountdown(showResult), 850);
+  } else {
+    revealStage('SECRET VOTE', '투표 집계 중', '시민인가, 리플리인가');
+    playDrumBeat();
+    setTimeout(() => runCountdown(showResult), 850);
+  }
 }
 
 function voteCounts() {
@@ -630,14 +732,13 @@ function showResult() {
   let scoreHtml = '';
 
   if (isConfession) {
-    title = '자수 결과';
-    kicker = 'CONFESSION';
+    title = r.citizenOnlySuccess ? '시민 승리' : '자수 결과';
+    kicker = r.citizenOnlySuccess ? '시민 자수 성공' : 'CONFESSION';
     penaltyIndices = r.penaltyIndices;
     scoreHtml = `
       <div class="result-score confession-score">
         <div><span>시민 자수</span><strong>${r.confessedCitizens.length}</strong></div>
-        <div><span>리플리 오자수</span><strong>${r.confessedRipleys.length}</strong></div>
-        <div><span>미자수 시민</span><strong>${r.nonConfessedCitizens.length}</strong></div>
+        <div><span>리플리 자수</span><strong>${r.confessedRipleys.length}</strong></div>
       </div>`;
   } else {
     title = isRipleyVoteWin ? '리플리 승리' : '시민 승리';
@@ -702,6 +803,413 @@ function showResult() {
   });
   document.getElementById('setupAgainBtn').addEventListener('click', showSetup);
   document.getElementById('menuBtn').addEventListener('click', showMenu);
+}
+
+
+function getUsedLifePrompts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('ripley-life-used-prompts') || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Number.isInteger) : [];
+  } catch {
+    return [];
+  }
+}
+
+function chooseLifePromptIndex() {
+  let used = getUsedLifePrompts();
+  if (used.length >= LIFE_PROMPTS.length) used = [];
+  const usedSet = new Set(used);
+  const available = LIFE_PROMPTS.map((_, i) => i).filter(i => !usedSet.has(i));
+  const picked = available[Math.floor(Math.random() * available.length)];
+  used.push(picked);
+  try {
+    localStorage.setItem('ripley-life-used-prompts', JSON.stringify(used));
+  } catch {}
+  return picked;
+}
+
+function prepareLifeRound() {
+  lifeState.players = makePlayers(lifeState.totalPlayers);
+  lifeState.promptIndex = chooseLifePromptIndex();
+  lifeState.prompt = LIFE_PROMPTS[lifeState.promptIndex];
+  lifeState.roles = shuffle([
+    'ripley',
+    ...Array(lifeState.totalPlayers - 1).fill('citizen')
+  ]);
+  lifeState.revealIndex = 0;
+  lifeState.speakerIndex = 0;
+  lifeState.votes = [];
+  lifeState.currentVoter = 0;
+  lifeState.result = null;
+}
+
+function lifeRipleyIndex() {
+  return lifeState.roles.indexOf('ripley');
+}
+
+function showLifeIntro() {
+  render(`
+    <div class="panel compact-panel intro-panel minimal-panel">
+      <span class="eyebrow">리플리 – 인생 조작단</span>
+      <h1 class="page-title">승리 조건</h1>
+
+      <div class="win-condition-grid simple-win-grid">
+        <div class="win-card ripley-win-card">
+          <span class="win-role">리플리</span>
+          <b>끝까지 들키지 않으면 승리</b>
+        </div>
+        <div class="win-card citizen-win-card">
+          <span class="win-role">시민</span>
+          <b>리플리를 최다 지목하면 승리</b>
+        </div>
+      </div>
+
+      <div class="flow-strip" aria-label="게임 진행 순서">
+        <span><b>1</b>제시어</span><i>›</i><span><b>2</b>역할</span><i>›</i><span><b>3</b>진술</span><i>›</i><span><b>4</b>투표</span>
+      </div>
+
+      <div class="btn-row action-row">
+        <button id="lifeSetupBtn" class="btn btn-primary" type="button">게임 설정</button>
+      </div>
+    </div>
+  `, 'life-intro');
+  document.getElementById('lifeSetupBtn').addEventListener('click', showLifeSetup);
+}
+
+function showLifeSetup() {
+  const citizens = Math.max(3, lifeState.totalPlayers - 1);
+  render(`
+    <div class="panel minimal-panel">
+      <span class="eyebrow">GAME SETUP</span>
+      <h1 class="page-title">인원 설정</h1>
+
+      <div class="role-config">
+        <label class="count-control">
+          <span class="count-label">총 인원</span>
+          <input id="lifeTotalPlayers" class="number-input" type="number" min="4" max="12" inputmode="numeric" value="${lifeState.totalPlayers}" />
+        </label>
+        <div class="count-control ripley-box">
+          <span class="count-label">리플리</span>
+          <div class="number-input" style="display:grid;place-items:center">1</div>
+        </div>
+        <div class="count-control citizen-box">
+          <span class="count-label">시민</span>
+          <div id="lifeCitizenCount" class="number-input" style="display:grid;place-items:center">${citizens}</div>
+        </div>
+      </div>
+
+      <div id="lifeSetupError" class="setup-error hidden"></div>
+      <div class="btn-row">
+        <button id="lifeStartBtn" class="btn btn-primary" type="button">게임 시작</button>
+      </div>
+    </div>
+  `, 'life-setup');
+
+  const totalEl = document.getElementById('lifeTotalPlayers');
+  const citizenEl = document.getElementById('lifeCitizenCount');
+  const errorEl = document.getElementById('lifeSetupError');
+  const startBtn = document.getElementById('lifeStartBtn');
+
+  function refresh() {
+    const total = Number(totalEl.value);
+    const error = !Number.isInteger(total) || total < 4 || total > 12 ? '총 인원은 4명부터 12명까지 가능합니다.' : '';
+    citizenEl.textContent = Number.isInteger(total) ? Math.max(0, total - 1) : '-';
+    startBtn.disabled = Boolean(error);
+    errorEl.classList.toggle('hidden', !error);
+    errorEl.textContent = error;
+  }
+
+  totalEl.addEventListener('input', refresh);
+  refresh();
+
+  startBtn.addEventListener('click', () => {
+    const total = Number(totalEl.value);
+    if (!Number.isInteger(total) || total < 4 || total > 12) {
+      toast('총 인원은 4명부터 12명까지 가능합니다.');
+      return;
+    }
+    lifeState.totalPlayers = total;
+    prepareLifeRound();
+    showLifePrompt();
+  });
+}
+
+function showLifePrompt() {
+  render(`
+    <div class="panel word-stage minimal-panel">
+      <div class="word-label">공통 제시어</div>
+      <div class="secret-word">${esc(lifeState.prompt)}</div>
+      <div class="btn-row">
+        <button id="lifeRoleStartBtn" class="btn btn-primary" type="button">역할 확인</button>
+      </div>
+    </div>
+  `, 'life-prompt');
+  document.getElementById('lifeRoleStartBtn').addEventListener('click', () => {
+    lifeState.revealIndex = 0;
+    showLifeRoleHandoff();
+  });
+}
+
+function showLifeRoleHandoff() {
+  const i = lifeState.revealIndex;
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="player-chip">역할 ${i + 1} / ${lifeState.totalPlayers}</span>
+      <div class="big-player">${esc(lifeState.players[i])}</div>
+      <p class="handoff-note">휴대폰을 넘겨주세요.</p>
+      <div class="btn-row">
+        <button id="lifeRevealRoleBtn" class="btn btn-primary" type="button">역할 확인</button>
+      </div>
+    </div>
+  `, 'life-role-handoff');
+  document.getElementById('lifeRevealRoleBtn').addEventListener('click', showLifeRole);
+}
+
+function showLifeRole() {
+  const i = lifeState.revealIndex;
+  const isRipley = lifeState.roles[i] === 'ripley';
+  render(`
+    <div class="panel word-stage minimal-panel">
+      <div class="word-label">${esc(lifeState.prompt)}</div>
+      <div class="secret-word">${isRipley ? '리플리' : '시민'}</div>
+      <p class="micro-copy">${isRipley ? '경험도 정치도 조작하세요.' : '경험은 진실. 정치는 자유.'}</p>
+      <div class="timer-track"><div class="timer-bar"></div></div>
+      <div class="btn-row">
+        <button id="lifeRoleSeenBtn" class="btn btn-primary" type="button">확인</button>
+      </div>
+    </div>
+  `, 'life-role');
+
+  let closed = false;
+  const finish = () => {
+    if (closed) return;
+    closed = true;
+    lifeState.revealIndex += 1;
+    if (lifeState.revealIndex >= lifeState.totalPlayers) showLifeReady();
+    else showLifeRoleHandoff();
+  };
+  document.getElementById('lifeRoleSeenBtn').addEventListener('click', finish);
+  state.secretTimer = setTimeout(finish, 6000);
+}
+
+function showLifeReady() {
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="player-chip">${esc(lifeState.prompt)}</span>
+      <div class="big-player">인생 진술</div>
+      <p class="handoff-note">첫 번째 플레이어부터 시작하세요.</p>
+      <div class="btn-row">
+        <button id="lifeTalkBtn" class="btn btn-primary" type="button">진술 시작</button>
+      </div>
+    </div>
+  `, 'life-ready');
+  document.getElementById('lifeTalkBtn').addEventListener('click', () => {
+    lifeState.speakerIndex = 0;
+    showLifeSpeaker();
+  });
+}
+
+function showLifeSpeaker() {
+  const i = lifeState.speakerIndex;
+  const pct = ((i + 1) / lifeState.totalPlayers) * 100;
+  render(`
+    <div class="panel minimal-panel">
+      <div class="progress-wrap">
+        <div class="progress-meta"><span>${esc(lifeState.prompt)}</span><span>${i + 1} / ${lifeState.totalPlayers}</span></div>
+        <div class="progress"><div style="width:${pct}%"></div></div>
+      </div>
+      <div class="speaker-box speaker-box-minimal">
+        <div class="speaker-name">${esc(lifeState.players[i])}</div>
+        <div class="speaker-help">진술하세요.</div>
+      </div>
+      <div class="btn-row">
+        <button id="lifeSpeechDoneBtn" class="btn btn-primary" type="button">다음</button>
+      </div>
+    </div>
+  `, 'life-speaker');
+
+  document.getElementById('lifeSpeechDoneBtn').addEventListener('click', () => {
+    if (lifeState.speakerIndex + 1 >= lifeState.totalPlayers) showLifeDebate();
+    else {
+      lifeState.speakerIndex += 1;
+      showLifeSpeaker();
+    }
+  });
+}
+
+function showLifeDebate() {
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="player-chip">${esc(lifeState.prompt)}</span>
+      <div class="big-player">정치 시간</div>
+      <p class="handoff-note">한 명씩 “리플리 같다”고 공개 지목하세요.</p>
+      <div class="micro-rule rule-pill"><b>거짓 지목 · 변호 · 동맹 가능</b></div>
+      <div class="btn-row">
+        <button id="lifeVoteStartBtn" class="btn btn-primary" type="button">비밀 투표</button>
+      </div>
+    </div>
+  `, 'life-debate');
+  document.getElementById('lifeVoteStartBtn').addEventListener('click', () => {
+    lifeState.currentVoter = 0;
+    lifeState.votes = [];
+    showLifeVoteHandoff();
+  });
+}
+
+function showLifeVoteHandoff() {
+  const i = lifeState.currentVoter;
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="player-chip">투표 ${i + 1} / ${lifeState.totalPlayers}</span>
+      <div class="big-player">${esc(lifeState.players[i])}</div>
+      <p class="handoff-note">휴대폰을 넘겨주세요.</p>
+      <div class="vote-status">${Array.from({length: lifeState.totalPlayers}, (_, d) => `<span class="vote-dot ${d < i ? 'done' : ''}"></span>`).join('')}</div>
+      <div class="btn-row">
+        <button id="lifeVoteOpenBtn" class="btn btn-primary" type="button">투표하기</button>
+      </div>
+    </div>
+  `, 'life-vote-handoff');
+  document.getElementById('lifeVoteOpenBtn').addEventListener('click', showLifeVoteChoices);
+}
+
+function showLifeVoteChoices() {
+  const voter = lifeState.currentVoter;
+  render(`
+    <div class="panel vote-private minimal-panel vote-choice-panel">
+      <span class="player-chip">투표 ${voter + 1} / ${lifeState.totalPlayers}</span>
+      <h1 class="page-title vote-title">누가 리플리인가요?</h1>
+      <div class="vote-grid dynamic-vote-grid">
+        ${lifeState.players.map((p, i) => i === voter ? '' : `<button class="person-btn" data-life-vote="${i}" type="button">${esc(p)}</button>`).join('')}
+      </div>
+    </div>
+  `, 'life-vote-choice');
+
+  document.querySelectorAll('[data-life-vote]').forEach(btn => btn.addEventListener('click', () => {
+    lifeState.votes[voter] = Number(btn.dataset.lifeVote);
+    lifeState.currentVoter += 1;
+    if (lifeState.currentVoter >= lifeState.totalPlayers) resolveLifeVote();
+    else showLifeVoteCover();
+  }));
+}
+
+function showLifeVoteCover() {
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="player-chip">저장 완료</span>
+      <div class="big-player">투표 완료</div>
+      <div class="btn-row">
+        <button id="lifeNextVoterBtn" class="btn btn-primary" type="button">다음 플레이어</button>
+      </div>
+    </div>
+  `, 'life-vote-cover');
+  document.getElementById('lifeNextVoterBtn').addEventListener('click', showLifeVoteHandoff);
+}
+
+function lifeVoteCounts() {
+  return lifeState.players.map((_, i) => lifeState.votes.filter(v => v === i).length);
+}
+
+function resolveLifeVote() {
+  const counts = lifeVoteCounts();
+  const ripleyIndex = lifeRipleyIndex();
+  const maxVotes = Math.max(...counts);
+  const topIndices = counts.map((count, i) => count === maxVotes ? i : -1).filter(i => i >= 0);
+  const citizenWin = topIndices.length === 1 && topIndices[0] === ripleyIndex;
+  const topCitizenIndices = topIndices.filter(i => lifeState.roles[i] === 'citizen');
+
+  lifeState.result = {
+    citizenWin,
+    counts,
+    ripleyIndex,
+    topCitizenIndices
+  };
+  showLifeResultReady();
+}
+
+function showLifeResultReady() {
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="eyebrow">RESULT</span>
+      <div class="big-player">결과 준비 완료</div>
+      <p class="handoff-note">휴대폰을 중앙에 놓아주세요.</p>
+      <div class="btn-row">
+        <button id="lifeRevealResultBtn" class="btn btn-primary" type="button">결과 발표</button>
+      </div>
+    </div>
+  `, 'life-result-ready');
+  document.getElementById('lifeRevealResultBtn').addEventListener('click', playLifeResultReveal);
+}
+
+function playLifeResultReveal() {
+  const r = lifeState.result;
+  const maxVotes = Math.max(...r.counts);
+  const top = r.counts.map((c, i) => c === maxVotes ? i : -1).filter(i => i >= 0);
+  const label = top.length === 1
+    ? `${ordinal(top[0])}`
+    : top.map(i => ordinal(i)).join(' · ');
+
+  revealStage('TOP VOTE', '최다 득표', label);
+  playDrumBeat();
+  setTimeout(() => {
+    revealStage('IDENTITY', '정체는…', '');
+    playDrumBeat();
+    setTimeout(() => runCountdown(showLifeResult), 720);
+  }, 1050);
+}
+
+function showLifeResult() {
+  const r = lifeState.result;
+  const citizenIndices = lifeState.roles.map((role, i) => role === 'citizen' ? i : -1).filter(i => i >= 0);
+  const topCitizenSet = new Set(r.topCitizenIndices);
+
+  let penaltyHtml = '';
+  if (r.citizenWin) {
+    penaltyHtml = `<div class="penalty-hero"><span class="penalty-kicker">🚨 벌칙 1명</span><div class="penalty-names">${esc(ordinal(r.ripleyIndex))} · 1잔</div></div>`;
+  } else {
+    const double = citizenIndices.filter(i => topCitizenSet.has(i));
+    const single = citizenIndices.filter(i => !topCitizenSet.has(i));
+    const parts = [];
+    if (double.length) parts.push(`2잔 · ${double.map(i => esc(ordinal(i))).join(' · ')}`);
+    if (single.length) parts.push(`1잔 · ${single.map(i => esc(ordinal(i))).join(' · ')}`);
+    penaltyHtml = `<div class="penalty-hero"><span class="penalty-kicker">🚨 시민 전원 벌칙</span><div class="penalty-names">${parts.join('<br>')}</div></div>`;
+  }
+
+  const detailRows = r.counts.map((count, i) => {
+    const role = lifeState.roles[i] === 'ripley' ? '리플리' : '시민';
+    return `<div class="detail-row"><span>${esc(lifeState.players[i])}</span><small>${role}</small><b>${count}표</b></div>`;
+  }).join('');
+
+  render(`
+    <div class="panel result result-compact result-ultra-compact">
+      <div class="result-topline"><span class="result-kicker">VOTE RESULT</span></div>
+      <h1>${r.citizenWin ? '시민 승리' : '리플리 승리'}</h1>
+      ${penaltyHtml}
+
+      <div class="word-reveal-inline">
+        <div><span>제시어</span><b>${esc(lifeState.prompt)}</b></div>
+        <i>·</i>
+        <div class="citizen-word"><span>리플리</span><b>${esc(ordinal(r.ripleyIndex))}</b></div>
+      </div>
+
+      <details class="result-details">
+        <summary>득표 상세</summary>
+        <div class="detail-list">${detailRows}</div>
+      </details>
+
+      <div class="result-actions">
+        <button id="lifeAgainBtn" class="btn btn-primary" type="button">한 판 더</button>
+        <button id="lifeSetupAgainBtn" class="btn" type="button">인원</button>
+        <button id="lifeMenuBtn" class="btn btn-ghost slim-btn" type="button">게임 선택</button>
+      </div>
+    </div>
+  `, 'life-result');
+
+  document.getElementById('lifeAgainBtn').addEventListener('click', () => {
+    prepareLifeRound();
+    showLifePrompt();
+  });
+  document.getElementById('lifeSetupAgainBtn').addEventListener('click', showLifeSetup);
+  document.getElementById('lifeMenuBtn').addEventListener('click', showMenu);
 }
 
 async function toggleFullscreen() {

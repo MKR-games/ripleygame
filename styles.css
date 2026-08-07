@@ -695,3 +695,12 @@ body { overscroll-behavior: none; }
   .result-ultra-compact .versus-score strong { font-size:31px; }
   .result-ultra-compact .penalty-names { font-size:18px; }
 }
+
+/* v7: suspense reveal only — existing v5 visual system is untouched. */
+.suspense-panel{min-height:min(68vh,520px);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.suspense-main{font-size:clamp(2.35rem,12vw,5.2rem);font-weight:950;letter-spacing:-.055em;line-height:.95;margin:1rem 0 .65rem}
+.suspense-pulse{display:flex;gap:.5rem;margin-top:1.05rem;justify-content:center}
+.suspense-pulse i{width:.55rem;height:.55rem;border-radius:999px;background:currentColor;opacity:.18;animation:ripleyPulse 1.05s infinite ease-in-out}
+.suspense-pulse i:nth-child(2){animation-delay:.16s}.suspense-pulse i:nth-child(3){animation-delay:.32s}
+@keyframes ripleyPulse{0%,70%,100%{transform:scale(.72);opacity:.18}35%{transform:scale(1.18);opacity:.8}}
+@media (prefers-reduced-motion:reduce){.suspense-pulse i{animation:none;opacity:.45}}
