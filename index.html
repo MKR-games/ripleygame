@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#090b10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>RIPLEY — 리플리 게임</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell" aria-live="polite">
+    <header class="topbar">
+      <button id="homeBtn" class="top-action home-action hidden" type="button" aria-label="처음 화면으로"><span class="top-icon">⌂</span><span class="top-label">홈</span></button>
+      <div class="brand-mini" aria-label="Ripley">RIPLEY</div>
+      <button id="fullscreenBtn" class="top-action fullscreen-action" type="button" aria-label="전체 화면"><span class="top-icon">⛶</span><span class="top-label">전체화면</span></button>
+    </header>
+
+    <main id="screen" class="screen"></main>
+
+    <footer class="footer-note">RIPLEY · 1 PHONE SOCIAL GAME</footer>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
