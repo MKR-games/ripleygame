@@ -372,8 +372,12 @@ function showIntro() {
           <b>리플리를 찾되 단어는 숨겨라</b>
         </div>
       </div>
-      <div class="flow-strip" aria-label="게임 진행 순서">
-        <span><b>1</b>단어</span><i>›</i><span><b>2</b>설명</span><i>›</i><span><b>3</b>심문</span><i>›</i><span><b>4</b>투표</span><i>›</i><span><b>5</b>역전</span>
+      <div class="flow-strip flow-strip-5" aria-label="게임 진행 순서">
+        <span class="flow-step"><b>1</b><em>단어</em></span>
+        <span class="flow-step"><b>2</b><em>설명</em></span>
+        <span class="flow-step"><b>3</b><em>심문</em></span>
+        <span class="flow-step"><b>4</b><em>투표</em></span>
+        <span class="flow-step"><b>5</b><em>역전</em></span>
       </div>
       <div class="micro-rule"><b>아무도 자신의 역할을 모릅니다.</b></div>
       <div class="btn-row action-row">
@@ -649,9 +653,9 @@ function runCountdown(finalFn) {
   tick();
 }
 
-function showManualReveal(kicker, main, sub, buttonLabel, onClick) {
+function showManualReveal(kicker, main, sub, buttonLabel, onClick, tone = '') {
   render(`
-    <div class="panel handoff minimal-panel suspense-panel">
+    <div class="panel handoff minimal-panel suspense-panel ${esc(tone)}">
       <span class="eyebrow">${esc(kicker)}</span>
       <div class="suspense-main">${esc(main)}</div>
       ${sub ? `<p class="handoff-note">${esc(sub)}</p>` : ''}
@@ -668,14 +672,16 @@ function playModeOneResultReveal() {
     'TOP VOTE',
     r.topIndices.length === 1 ? topLabel : '동률',
     r.topIndices.length === 1 ? `${r.maxVotes}표` : `${topLabel} · ${r.maxVotes}표`,
-    '정체 공개',
+    '판정 확인',
     () => runCountdown(() => {
       if (r.caught) {
-        showManualReveal('IDENTITY', '리플리', `${ordinal(r.ripleyIndex)} 검거`, '마지막 기회', showRipleyGuessHandoff);
+        showManualReveal('JUDGMENT', '검거 성공', `${ordinal(r.ripleyIndex)} 리플리 적발`, '정체 공개', () => {
+          runCountdown(() => showManualReveal('IDENTITY', '리플리', `${ordinal(r.ripleyIndex)} 검거`, '마지막 기회', showRipleyGuessHandoff, 'tone-caught'));
+        }, 'tone-caught');
       } else if (r.topIndices.length === 1) {
-        showManualReveal('IDENTITY', '시민', `${ordinal(r.topIndices[0])} 오지목`, '최종 결과 보기', showResult);
+        showManualReveal('JUDGMENT', '검거 실패', `${ordinal(r.topIndices[0])} 시민 오지목`, '최종 결과 보기', showResult, 'tone-escape');
       } else {
-        showManualReveal('VOTE', '검거 실패', '동률은 리플리 생존', '최종 결과 보기', showResult);
+        showManualReveal('JUDGMENT', '검거 실패', '동률 · 리플리 생존', '최종 결과 보기', showResult, 'tone-escape');
       }
     })
   );
@@ -853,8 +859,11 @@ function showLifeIntro() {
         </div>
       </div>
 
-      <div class="flow-strip" aria-label="게임 진행 순서">
-        <span><b>1</b>제시어</span><i>›</i><span><b>2</b>역할</span><i>›</i><span><b>3</b>진술·압박</span><i>›</i><span><b>4</b>투표</span>
+      <div class="flow-strip flow-strip-4" aria-label="게임 진행 순서">
+        <span class="flow-step"><b>1</b><em>제시어</em></span>
+        <span class="flow-step"><b>2</b><em>역할</em></span>
+        <span class="flow-step"><b>3</b><em>진술·압박</em></span>
+        <span class="flow-step"><b>4</b><em>투표</em></span>
       </div>
 
       <div class="btn-row action-row">
@@ -1137,19 +1146,25 @@ function playLifeResultReveal() {
     ? `${ordinal(top[0])}`
     : top.map(i => ordinal(i)).join(' · ');
 
-  showManualReveal('TOP VOTE', '최다 득표', label, '정체 공개', () => {
+  showManualReveal('TOP VOTE', '최다 득표', label, '판정 확인', () => {
     runCountdown(() => {
       if (top.length === 1) {
-        const role = lifeState.roles[top[0]] === 'ripley' ? '리플리' : '시민';
-        showManualReveal('IDENTITY', role, `${ordinal(top[0])}`, '최종 결과 보기', showLifeResult);
+        const exposedIsRipley = lifeState.roles[top[0]] === 'ripley';
+        const role = exposedIsRipley ? '리플리' : '시민';
+        const sub = exposedIsRipley ? `${ordinal(top[0])} 적발` : `${ordinal(top[0])} 시민 오지목`;
+        const tone = exposedIsRipley ? 'tone-caught' : 'tone-escape';
+        showManualReveal('JUDGMENT', exposedIsRipley ? '검거 성공' : '검거 실패', sub, '정체 공개', () => {
+          runCountdown(() => showManualReveal('IDENTITY', role, `${ordinal(top[0])}`, '최종 결과 보기', showLifeResult, tone));
+        }, tone);
       } else {
         const includesRipley = top.includes(r.ripleyIndex);
         showManualReveal(
-          'IDENTITY',
-          '동률',
-          includesRipley ? '리플리가 포함됐지만 단독 검거 실패' : '시민끼리 최다 득표',
+          'JUDGMENT',
+          '검거 실패',
+          includesRipley ? '동률 · 리플리 생존' : '시민끼리 최다 득표',
           '최종 결과 보기',
-          showLifeResult
+          showLifeResult,
+          'tone-escape'
         );
       }
     });
