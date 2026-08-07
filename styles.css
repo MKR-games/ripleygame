@@ -723,3 +723,347 @@ body { overscroll-behavior: none; }
 .word-guess-input:focus{border-color:rgba(216,255,79,.55);box-shadow:0 0 0 3px rgba(216,255,79,.07)}
 .guess-result-word{font-size:clamp(18px,5vw,26px)!important;line-height:1.1;word-break:keep-all}
 @media (max-height:680px){.word-guess-input{height:50px;margin-top:12px;font-size:22px}}
+
+/* =========================================================
+   v10.1 — RESPONSIVE / LINE-BREAK HARDENING
+   Mobile → tablet → desktop, portrait / landscape safe.
+   ========================================================= */
+:root {
+  --content-max: 820px;
+  --edge-gap: clamp(10px, 2.8vw, 24px);
+  --panel-gap: clamp(12px, 2.4vw, 22px);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body,
+button,
+input {
+  word-break: keep-all;
+}
+
+/* Natural Korean wrapping first; emergency-wrap only when a token is too long. */
+.page-title,
+.page-sub,
+.game-title,
+.game-desc,
+.tagline,
+.handoff-note,
+.privacy-card,
+.speaker-help,
+.result-summary,
+.penalty-names,
+.modal-card h2,
+.modal-body,
+.btn,
+.person-btn,
+.win-card,
+.setup-summary,
+.setup-error,
+.word-reveal-inline,
+.detail-row,
+.role-row {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.page-title,
+.game-title,
+.big-player,
+.speaker-name,
+.result h1,
+.secret-word,
+.penalty-names {
+  text-wrap: balance;
+}
+
+.app-shell {
+  width: 100%;
+  max-width: 100vw;
+  padding-left: max(var(--edge-gap), env(safe-area-inset-left));
+  padding-right: max(var(--edge-gap), env(safe-area-inset-right));
+}
+
+.topbar,
+.screen {
+  width: min(100%, var(--content-max));
+}
+
+.page,
+.panel,
+.game-card,
+.win-card,
+.count-control,
+.reveal-card,
+.person-btn,
+.btn,
+.word-reveal-inline > div,
+.result-actions > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel {
+  width: 100%;
+  overflow: hidden;
+}
+
+.btn,
+.person-btn,
+.top-action {
+  white-space: normal;
+  line-height: 1.22;
+}
+
+.secret-word {
+  max-width: 100%;
+  line-height: 1.02;
+  font-size: clamp(34px, 11vw, 76px);
+  overflow-wrap: anywhere;
+}
+
+.word-reveal-inline b {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.penalty-names {
+  max-width: 100%;
+}
+
+/* Responsive voting: comfortably sized tiles without forcing overflow. */
+.dynamic-vote-grid,
+.confess-grid,
+.vote-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(104px, 100%), 1fr));
+}
+
+/* Controls should stay thumb-friendly on touch hardware. */
+@media (pointer: coarse) {
+  .btn { min-height: 50px; }
+  .person-btn { min-height: 50px; }
+  .top-action { min-height: 40px; }
+}
+
+/* Phones: preserve information hierarchy, not tiny type. */
+@media (max-width: 520px) {
+  :root { --edge-gap: 10px; }
+
+  .screen { padding-top: 4px; padding-bottom: 5px; }
+  .panel { padding: clamp(14px, 4.2vw, 18px); }
+  .page-title { font-size: clamp(26px, 8.4vw, 38px); line-height: 1.08; }
+  .page-sub { font-size: clamp(12px, 3.4vw, 14px); }
+  .game-title { font-size: clamp(19px, 6vw, 25px); line-height: 1.16; }
+  .game-desc { font-size: clamp(11px, 3.1vw, 13px); }
+  .speaker-name, .big-player { line-height: 1.04; }
+
+  .dynamic-vote-grid,
+  .confess-grid,
+  .vote-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .result-actions { grid-template-columns: 1fr 1fr; }
+}
+
+/* Very narrow phones / split-screen: switch components instead of shrinking text. */
+@media (max-width: 340px) {
+  .app-shell {
+    grid-template-rows: 44px minmax(0, 1fr) 0;
+    padding-left: max(7px, env(safe-area-inset-left));
+    padding-right: max(7px, env(safe-area-inset-right));
+  }
+  .footer-note { display: none; }
+  .topbar { height: 42px; min-height: 42px; }
+  .brand-mini { font-size: 9px; letter-spacing: .18em; }
+  .top-label { display: none; }
+  .top-action { min-width: 38px; width: 38px; height: 38px; padding: 0; }
+  .topbar { grid-template-columns: 40px minmax(0,1fr) 40px; }
+
+  .panel { padding: 13px; border-radius: 18px; }
+  .game-card { padding: 14px; }
+  .page-title { font-size: clamp(24px, 9vw, 31px); }
+  .secret-word { min-height: 96px; font-size: clamp(31px, 12vw, 48px); }
+
+  .win-condition-grid,
+  .score-rule,
+  .reveal-grid,
+  .result-actions {
+    grid-template-columns: 1fr;
+  }
+  .result-actions .slim-btn { grid-column: auto; }
+
+  .role-config { gap: 5px; }
+  .count-control { padding: 7px 4px; }
+  .count-label { font-size: 10px; }
+  .number-input { font-size: 19px; }
+
+  .dynamic-vote-grid,
+  .confess-grid,
+  .vote-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .person-btn { font-size: 10px; }
+
+  .word-reveal-inline {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .word-reveal-inline i { display: none; }
+}
+
+/* Tablets and desktops: use width, but keep readable line lengths. */
+@media (min-width: 700px) {
+  :root { --content-max: 920px; }
+  .screen { padding-top: 16px; padding-bottom: 20px; }
+  .panel { padding: clamp(24px, 3vw, 34px); }
+  .game-grid { gap: 16px; }
+  .game-card { min-height: 166px; display: flex; flex-direction: column; justify-content: center; }
+  .page-sub, .result-desc, .handoff-note { max-width: 650px; margin-left: auto; margin-right: auto; }
+  .dynamic-vote-grid,
+  .confess-grid,
+  .vote-grid {
+    grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  }
+}
+
+@media (min-width: 1100px) {
+  :root { --content-max: 980px; }
+  .app-shell { grid-template-rows: 58px minmax(0,1fr) 22px; }
+  .topbar { height: 54px; }
+  .game-title { font-size: 28px; }
+  .game-desc { font-size: 13px; }
+}
+
+/* Short-height and landscape screens: favor width, allow only the main content area to scroll. */
+@media (max-height: 560px) {
+  .app-shell { grid-template-rows: 42px minmax(0,1fr) 0; }
+  .footer-note { display: none; }
+  .topbar { height: 40px; min-height: 40px; }
+  .screen { align-items: flex-start; padding-top: 3px; }
+  .page { margin: 0; }
+  .panel { padding: 12px 14px; }
+  .hero { padding-top: 2px; }
+  .logo { font-size: clamp(40px, 10vh, 62px); margin-top: 4px; }
+  .secret-word { min-height: 78px; margin: 8px auto; font-size: clamp(30px, 10vh, 54px); }
+  .privacy-card { display: none; }
+  .btn-row { margin-top: 8px; }
+}
+
+@media (orientation: landscape) and (max-height: 620px) and (min-width: 600px) {
+  :root { --content-max: 980px; }
+  .screen { padding: 2px 0 4px; }
+  .panel { padding: 14px 18px; }
+  .game-grid { grid-template-columns: 1fr 1fr; }
+  .hero { padding: 0 0 4px; }
+  .tagline { max-width: 720px; }
+  .result-actions { grid-template-columns: 1fr 1fr; }
+}
+
+/* Browser zoom / accessibility: never hide overflowed text inside actions. */
+@media (min-resolution: 1dppx) {
+  .btn, .person-btn, .game-card, .panel { contain: layout paint; }
+}
+
+/* ===== v11 · 20-choice final deduction ===== */
+.guess-panel{
+  width:min(100%, 760px);
+  padding-top:14px;
+  padding-bottom:14px;
+}
+.guess-title{
+  margin:7px 0 8px;
+  font-size:clamp(25px, 7vw, 38px);
+}
+.guess-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-rows:repeat(5,minmax(0,1fr));
+  gap:7px;
+  width:100%;
+  margin:8px 0 10px;
+}
+.guess-option{
+  appearance:none;
+  -webkit-appearance:none;
+  min-width:0;
+  min-height:48px;
+  padding:7px 4px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:12px;
+  background:rgba(255,255,255,.035);
+  color:#eef1f6;
+  font:inherit;
+  font-size:clamp(10.5px, 2.8vw, 13px);
+  font-weight:850;
+  line-height:1.15;
+  letter-spacing:-.035em;
+  text-align:center;
+  word-break:keep-all;
+  overflow-wrap:anywhere;
+  cursor:pointer;
+  transition:transform .12s ease,border-color .12s ease,background .12s ease,box-shadow .12s ease,color .12s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.guess-option:active{transform:scale(.97)}
+.guess-option.is-selected{
+  color:#10130a;
+  border-color:var(--accent);
+  background:var(--accent);
+  box-shadow:0 0 0 3px rgba(216,255,79,.09),0 9px 24px rgba(0,0,0,.18);
+}
+.guess-lock-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(118px,.42fr);
+  align-items:center;
+  gap:8px;
+  margin-top:3px;
+}
+.guess-selected{
+  min-width:0;
+  height:46px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 9px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,255,255,.025);
+  color:#c8ced8;
+  font-size:12px;
+  font-weight:850;
+  line-height:1.2;
+  text-align:center;
+  word-break:keep-all;
+  overflow-wrap:anywhere;
+}
+.guess-lock-row .btn{margin:0;min-height:46px;padding:0 10px}
+.guess-lock-row .btn:disabled{opacity:.34;cursor:not-allowed;transform:none}
+
+@media (max-width:420px){
+  .guess-panel{padding-left:11px;padding-right:11px}
+  .guess-grid{gap:5px;margin-top:6px}
+  .guess-option{min-height:45px;padding:5px 2px;border-radius:10px;font-size:clamp(9.5px,2.9vw,11.5px)}
+  .guess-lock-row{grid-template-columns:minmax(0,1fr) 112px;gap:6px}
+  .guess-selected{height:43px;padding:0 6px;font-size:10.5px}
+  .guess-lock-row .btn{min-height:43px;font-size:11px}
+}
+@media (max-width:340px){
+  .guess-grid{gap:4px}
+  .guess-option{min-height:42px;font-size:9.2px;letter-spacing:-.05em}
+  .guess-title{font-size:24px}
+}
+@media (max-height:700px){
+  .guess-panel{padding-top:9px;padding-bottom:9px}
+  .guess-title{margin:4px 0 5px;font-size:24px}
+  .guess-grid{gap:4px;margin:5px 0 6px}
+  .guess-option{min-height:39px;padding:4px 2px;font-size:10px;border-radius:9px}
+  .guess-selected,.guess-lock-row .btn{height:40px;min-height:40px}
+}
