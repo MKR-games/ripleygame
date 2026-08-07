@@ -75,6 +75,7 @@ const state = {
   currentVoter: 0,
   phase: 'menu',
   result: null,
+  wordGuess: '',
   secretTimer: null
 };
 
@@ -210,6 +211,7 @@ function prepareRound() {
   state.votes = [];
   state.currentVoter = 0;
   state.result = null;
+  state.wordGuess = '';
 }
 
 function playerWord(index) {
@@ -226,6 +228,10 @@ function ripleyIndices() {
 
 function majorityThreshold() {
   return Math.floor(state.totalPlayers / 2) + 1;
+}
+
+function normalizeWord(value) {
+  return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
 }
 
 function showMenu() {
@@ -261,18 +267,18 @@ function showIntro() {
       <div class="win-condition-grid simple-win-grid">
         <div class="win-card ripley-win-card">
           <span class="win-role">리플리</span>
-          <b>시민 쪽 표가 더 많으면 승리</b>
+          <b>시민을 찾고, 단어를 숨겨라</b>
         </div>
         <div class="win-card citizen-win-card">
           <span class="win-role">시민</span>
-          <b>자수하면 생존 · 동률도 승리</b>
+          <b>숨거나, 잡혀도 단어를 맞혀라</b>
         </div>
       </div>
 
       <div class="flow-strip" aria-label="게임 진행 순서">
-        <span><b>1</b>단어</span><i>›</i><span><b>2</b>발언</span><i>›</i><span><b>3</b>자수</span><i>›</i><span><b>4</b>투표</span>
+        <span><b>1</b>단어</span><i>›</i><span><b>2</b>발언·압박</span><i>›</i><span><b>3</b>자수</span><i>›</i><span><b>4</b>투표·역전</span>
       </div>
-      <div class="micro-rule">벌칙 · <b>자수한 리플리 + 자수하지 않은 시민</b></div>
+      <div class="micro-rule"><b>거짓말 가능</b> · 시민이 잡히면 리플리 단어 추리</div>
 
       <div class="btn-row action-row">
         <button id="setupBtn" class="btn btn-primary" type="button">게임 설정</button>
@@ -449,10 +455,10 @@ function showSpeaker() {
 function showSpeechComplete() {
   render(`
     <div class="panel handoff minimal-panel">
-      <span class="eyebrow">POLITICS</span>
-      <div class="big-player">정치 시간</div>
-      <p class="handoff-note">한 명씩 “시민 같다”고 공개 지목하세요.</p>
-      <div class="micro-rule rule-pill"><b>거짓 지목 · 변호 · 자수 bluff 가능</b></div>
+      <span class="eyebrow">PRESSURE</span>
+      <div class="big-player">압박 시간</div>
+      <p class="handoff-note">각자 한 명에게 질문 1회.</p>
+      <div class="micro-rule rule-pill"><b>답변은 거짓말 가능 · 단어 직접 공개 금지</b></div>
       <div class="btn-row">
         <button id="confessionStartBtn" class="btn btn-primary" type="button">자수 시작</button>
       </div>
@@ -487,7 +493,7 @@ function showPrivateConfession() {
     <div class="panel vote-private minimal-panel">
       <span class="player-chip">${i + 1} / ${state.totalPlayers}</span>
       <h1 class="page-title decision-title">자수하시겠습니까?</h1>
-      <p class="micro-copy">내가 시민이라고 생각하면 예.</p>
+      <p class="micro-copy">시민이어도 단어를 맞혀야 승리합니다.</p>
       <div class="decision-grid">
         <button id="confessYesBtn" class="btn decision-yes" type="button">예</button>
         <button id="confessNoBtn" class="btn decision-no" type="button">아니요</button>
@@ -536,21 +542,29 @@ function resolveConfessionRound() {
   const confessedCitizens = confessed.filter(i => state.roles[i] === 'citizen');
   const confessedRipleys = confessed.filter(i => state.roles[i] === 'ripley');
   const nonConfessedCitizens = citizenIndices().filter(i => !state.confessionAnswers[i]);
-
-  // 시민만 자수했다면 더 이상 무승부가 아니다.
-  // 시민 진영의 완전한 자수 성공으로 처리하고 리플리 전원이 벌칙을 받는다.
   const citizenOnlySuccess = confessedCitizens.length > 0 && confessedRipleys.length === 0;
-  const penaltyIndices = citizenOnlySuccess
-    ? ripleyIndices()
-    : [...confessedRipleys, ...nonConfessedCitizens].sort((a, b) => a - b);
 
+  if (citizenOnlySuccess) {
+    state.result = {
+      type: 'word-guess-pending',
+      source: 'confession',
+      confessed,
+      confessedCitizens,
+      confessedRipleys,
+      nonConfessedCitizens
+    };
+    showResultReady('자수 선택 완료');
+    return;
+  }
+
+  const penaltyIndices = [...confessedRipleys, ...nonConfessedCitizens].sort((a, b) => a - b);
   state.result = {
     type: 'confession-result',
     confessed,
     confessedCitizens,
     confessedRipleys,
     nonConfessedCitizens,
-    citizenOnlySuccess,
+    citizenOnlySuccess: false,
     penaltyIndices
   };
   showResultReady('모든 자수 선택이 완료되었습니다');
@@ -632,12 +646,23 @@ function resolveVote() {
   const citizenTargetVotes = state.votes.filter(v => citizenSet.has(v)).length;
   const ripleyTargetVotes = state.totalPlayers - citizenTargetVotes;
   const isTie = citizenTargetVotes === ripleyTargetVotes;
-  state.result = {
-    type: citizenTargetVotes > ripleyTargetVotes ? 'ripley-vote-win' : 'citizen-vote-win',
-    citizenTargetVotes,
-    ripleyTargetVotes,
-    isTie
-  };
+
+  if (citizenTargetVotes > ripleyTargetVotes) {
+    state.result = {
+      type: 'word-guess-pending',
+      source: 'vote',
+      citizenTargetVotes,
+      ripleyTargetVotes,
+      isTie
+    };
+  } else {
+    state.result = {
+      type: 'citizen-vote-win',
+      citizenTargetVotes,
+      ripleyTargetVotes,
+      isTie
+    };
+  }
   showResultReady('모든 비밀 투표가 완료되었습니다');
 }
 
@@ -648,7 +673,7 @@ function showResultReady(message) {
       <div class="big-player">결과 준비 완료</div>
       <p class="handoff-note">휴대폰을 중앙에 놓아주세요.</p>
       <div class="btn-row">
-        <button id="revealResultBtn" class="btn btn-primary" type="button">결과 발표</button>
+        <button id="revealResultBtn" class="btn btn-primary" type="button">결과 확인</button>
       </div>
     </div>
   `, 'result-ready');
@@ -699,17 +724,133 @@ function runCountdown(finalFn) {
   tick();
 }
 
+function revealImpact(kicker, main, sub, finalFn, delay = 1150) {
+  revealStage(kicker, main, sub);
+  playDrumBeat(true);
+  if (navigator.vibrate) navigator.vibrate([70, 45, 110]);
+  setTimeout(finalFn, delay);
+}
+
+function showManualReveal(kicker, main, sub, buttonLabel, onClick) {
+  render(`
+    <div class="panel handoff minimal-panel suspense-panel">
+      <span class="eyebrow">${esc(kicker)}</span>
+      <div class="suspense-main">${esc(main)}</div>
+      ${sub ? `<p class="handoff-note">${esc(sub)}</p>` : ''}
+      <div class="btn-row">
+        <button id="manualRevealBtn" class="btn btn-primary" type="button">${esc(buttonLabel)}</button>
+      </div>
+    </div>
+  `, 'manual-reveal');
+  document.getElementById('manualRevealBtn').addEventListener('click', onClick);
+}
+
+function showModeOneFinalButton(kicker, main, sub = '') {
+  showManualReveal(kicker, main, sub, '최종 결과 보기', showResult);
+}
+
+function showWordGuess() {
+  const r = state.result;
+  const citizens = r.source === 'confession' ? r.confessedCitizens : citizenIndices();
+  const citizenLabel = citizens.map(i => ordinal(i)).join(' · ');
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="eyebrow">LAST CHANCE</span>
+      <div class="big-player">시민의 마지막 추리</div>
+      <p class="handoff-note">리플리들의 단어를 맞히세요.</p>
+      <div class="rule-pill">시민 · <b>${esc(citizenLabel)}</b></div>
+      <input id="wordGuessInput" class="word-guess-input" type="text" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="단어 입력" />
+      <div class="btn-row">
+        <button id="lockWordGuessBtn" class="btn btn-primary" type="button">추측 확정</button>
+      </div>
+    </div>
+  `, 'word-guess');
+
+  const input = document.getElementById('wordGuessInput');
+  const submit = () => {
+    const guess = input.value.trim();
+    if (!guess) { toast('단어를 입력해 주세요.'); return; }
+    state.wordGuess = guess;
+    const correct = normalizeWord(guess) === normalizeWord(state.ripleyWord);
+    const base = state.result;
+    const source = base.source;
+    let penaltyIndices;
+    if (correct) {
+      penaltyIndices = ripleyIndices();
+    } else if (source === 'vote') {
+      penaltyIndices = citizenIndices();
+    } else {
+      penaltyIndices = base.confessedCitizens;
+    }
+    state.result = {
+      ...base,
+      type: 'word-guess-result',
+      guess,
+      correct,
+      penaltyIndices
+    };
+    showManualReveal('LOCKED', '추측 잠금 완료', guess, '정답 공개', () => {
+      runCountdown(() => {
+        showManualReveal(
+          correct ? 'CORRECT' : 'WRONG',
+          state.ripleyWord,
+          correct ? '시민 역전 성공' : '리플리 단어 방어 성공',
+          '최종 결과 보기',
+          showResult
+        );
+      });
+    });
+  };
+  document.getElementById('lockWordGuessBtn').addEventListener('click', submit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => input.focus(), 50);
+}
+
 function playModeOneResultReveal() {
   const r = state.result;
-  if (r.type === 'confession-result') {
-    revealStage('CONFESSION', `자수 ${r.confessed.length}명`, '정체를 확인합니다');
-    playDrumBeat();
-    setTimeout(() => runCountdown(showResult), 850);
-  } else {
-    revealStage('SECRET VOTE', '투표 집계 중', '시민인가, 리플리인가');
-    playDrumBeat();
-    setTimeout(() => runCountdown(showResult), 850);
+
+  if (r.type === 'word-guess-pending') {
+    if (r.source === 'vote') {
+      showManualReveal(
+        'SECRET VOTE',
+        `${r.citizenTargetVotes} : ${r.ripleyTargetVotes}`,
+        '시민 지목 · 리플리 지목',
+        '판정 공개',
+        () => runCountdown(() => showManualReveal('CAUGHT', '시민 검거', '하지만 아직 끝나지 않았습니다.', '마지막 추리', showWordGuess))
+      );
+    } else {
+      showManualReveal(
+        'CONFESSION',
+        `자수 ${r.confessed.length}명`,
+        '자수자가 정말 시민일까',
+        '판정 공개',
+        () => runCountdown(() => showManualReveal('CONFESSION', '시민 자수 성공', '단어를 맞혀야 최종 승리합니다.', '마지막 추리', showWordGuess))
+      );
+    }
+    return;
   }
+
+  if (r.type === 'confession-result') {
+    let main = '자수 판정';
+    if (r.confessedCitizens.length && r.confessedRipleys.length) main = '양쪽 모두 자수';
+    else if (r.confessedRipleys.length) main = '리플리 오자수';
+    showManualReveal(
+      'CONFESSION',
+      `자수 ${r.confessed.length}명`,
+      '정체를 확인합니다.',
+      '판정 공개',
+      () => runCountdown(() => showModeOneFinalButton('CONFESSION', main, `시민 ${r.confessedCitizens.length} · 리플리 ${r.confessedRipleys.length}`))
+    );
+    return;
+  }
+
+  showManualReveal(
+    r.isTie ? 'TIE' : 'SECRET VOTE',
+    `${r.citizenTargetVotes} : ${r.ripleyTargetVotes}`,
+    `시민 지목 · 리플리 지목${r.isTie ? ' · 동률' : ''}`,
+    '판정 공개',
+    () => runCountdown(() => showModeOneFinalButton(r.isTie ? 'TIE' : 'VOTE RESULT', '시민 승리', r.isTie ? '동률은 시민 승리' : '시민이 살아남았습니다.'))
+  );
 }
 
 function voteCounts() {
@@ -723,7 +864,7 @@ function roleName(index) {
 function showResult() {
   const r = state.result;
   const isConfession = r.type === 'confession-result';
-  const isRipleyVoteWin = r.type === 'ripley-vote-win';
+  const isWordGuess = r.type === 'word-guess-result';
   const counts = state.votes.length === state.totalPlayers ? voteCounts() : null;
 
   let title = '';
@@ -731,9 +872,18 @@ function showResult() {
   let penaltyIndices = [];
   let scoreHtml = '';
 
-  if (isConfession) {
-    title = r.citizenOnlySuccess ? '시민 승리' : '자수 결과';
-    kicker = r.citizenOnlySuccess ? '시민 자수 성공' : 'CONFESSION';
+  if (isWordGuess) {
+    title = r.correct ? '시민 역전 승리' : '리플리 승리';
+    kicker = r.correct ? 'WORD STEAL' : 'WORD DEFENSE';
+    penaltyIndices = r.penaltyIndices || [];
+    scoreHtml = `
+      <div class="result-score confession-score">
+        <div><span>시민 추측</span><strong class="guess-result-word">${esc(r.guess)}</strong></div>
+        <div><span>정답</span><strong class="guess-result-word">${esc(state.ripleyWord)}</strong></div>
+      </div>`;
+  } else if (isConfession) {
+    title = '자수 결과';
+    kicker = 'CONFESSION';
     penaltyIndices = r.penaltyIndices;
     scoreHtml = `
       <div class="result-score confession-score">
@@ -741,12 +891,9 @@ function showResult() {
         <div><span>리플리 자수</span><strong>${r.confessedRipleys.length}</strong></div>
       </div>`;
   } else {
-    title = isRipleyVoteWin ? '리플리 승리' : '시민 승리';
+    title = '시민 승리';
     kicker = r.isTie ? '동률 · 시민 승리' : 'VOTE RESULT';
-    penaltyIndices = state.roles.map((role, i) => {
-      if (isRipleyVoteWin) return role === 'citizen' ? i : -1;
-      return role === 'ripley' ? i : -1;
-    }).filter(i => i >= 0);
+    penaltyIndices = ripleyIndices();
     scoreHtml = `
       <div class="versus-score">
         <div class="side citizen-side"><span>시민 지목</span><strong>${r.citizenTargetVotes}</strong></div>
@@ -760,16 +907,24 @@ function showResult() {
     ? `<div class="penalty-hero"><span class="penalty-kicker">🚨 벌칙 ${penaltyLabels.length}명</span><div class="penalty-names">${penaltyLabels.map(esc).join('<span>·</span>')}</div></div>`
     : `<div class="penalty-hero safe"><span class="penalty-kicker">✓ 벌칙 없음</span><div class="penalty-names">모두 생존</div></div>`;
 
-  const detailRows = isConfession
-    ? state.players.map((p, i) => {
-        const confessed = Boolean(state.confessionAnswers[i]);
-        const penalized = penaltyIndices.includes(i);
-        return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(p)}</span><small>${roleName(i)} · ${confessed ? '자수' : '미자수'}</small><b>${penalized ? '벌칙' : '생존'}</b></div>`;
-      }).join('')
-    : counts.map((c, i) => {
-        const penalized = penaltyIndices.includes(i);
-        return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(state.players[i])}</span><small>${roleName(i)}</small><b>${c}표</b></div>`;
-      }).join('');
+  let detailRows = '';
+  if (isConfession) {
+    detailRows = state.players.map((p, i) => {
+      const confessed = Boolean(state.confessionAnswers[i]);
+      const penalized = penaltyIndices.includes(i);
+      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(p)}</span><small>${roleName(i)} · ${confessed ? '자수' : '미자수'}</small><b>${penalized ? '벌칙' : '생존'}</b></div>`;
+    }).join('');
+  } else if (counts) {
+    detailRows = counts.map((c, i) => {
+      const penalized = penaltyIndices.includes(i);
+      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(state.players[i])}</span><small>${roleName(i)}</small><b>${c}표</b></div>`;
+    }).join('');
+  } else {
+    detailRows = state.players.map((p, i) => {
+      const penalized = penaltyIndices.includes(i);
+      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(p)}</span><small>${roleName(i)}</small><b>${penalized ? '벌칙' : '생존'}</b></div>`;
+    }).join('');
+  }
 
   render(`
     <div class="panel result result-compact result-ultra-compact">
@@ -865,7 +1020,7 @@ function showLifeIntro() {
       </div>
 
       <div class="flow-strip" aria-label="게임 진행 순서">
-        <span><b>1</b>제시어</span><i>›</i><span><b>2</b>역할</span><i>›</i><span><b>3</b>진술</span><i>›</i><span><b>4</b>투표</span>
+        <span><b>1</b>제시어</span><i>›</i><span><b>2</b>역할</span><i>›</i><span><b>3</b>진술·압박</span><i>›</i><span><b>4</b>투표</span>
       </div>
 
       <div class="btn-row action-row">
@@ -1041,9 +1196,9 @@ function showLifeDebate() {
   render(`
     <div class="panel handoff minimal-panel">
       <span class="player-chip">${esc(lifeState.prompt)}</span>
-      <div class="big-player">정치 시간</div>
-      <p class="handoff-note">한 명씩 “리플리 같다”고 공개 지목하세요.</p>
-      <div class="micro-rule rule-pill"><b>거짓 지목 · 변호 · 동맹 가능</b></div>
+      <div class="big-player">압박 시간</div>
+      <p class="handoff-note">각자 한 명에게 질문 1회.</p>
+      <div class="micro-rule rule-pill"><b>후보 공개 지목 · 실제 투표는 달라도 됨</b></div>
       <div class="btn-row">
         <button id="lifeVoteStartBtn" class="btn btn-primary" type="button">비밀 투표</button>
       </div>
@@ -1148,13 +1303,23 @@ function playLifeResultReveal() {
     ? `${ordinal(top[0])}`
     : top.map(i => ordinal(i)).join(' · ');
 
-  revealStage('TOP VOTE', '최다 득표', label);
-  playDrumBeat();
-  setTimeout(() => {
-    revealStage('IDENTITY', '정체는…', '');
-    playDrumBeat();
-    setTimeout(() => runCountdown(showLifeResult), 720);
-  }, 1050);
+  showManualReveal('TOP VOTE', '최다 득표', label, '정체 공개', () => {
+    runCountdown(() => {
+      if (top.length === 1) {
+        const role = lifeState.roles[top[0]] === 'ripley' ? '리플리' : '시민';
+        showManualReveal('IDENTITY', role, `${ordinal(top[0])}`, '최종 결과 보기', showLifeResult);
+      } else {
+        const includesRipley = top.includes(r.ripleyIndex);
+        showManualReveal(
+          'IDENTITY',
+          '동률',
+          includesRipley ? '리플리가 포함됐지만 단독 검거 실패' : '시민끼리 최다 득표',
+          '최종 결과 보기',
+          showLifeResult
+        );
+      }
+    });
+  });
 }
 
 function showLifeResult() {
