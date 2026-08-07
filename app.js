@@ -27,7 +27,6 @@ if (WORD_PAIRS.length !== 100) {
   throw new Error(`단어 조합은 100개여야 합니다. 현재: ${WORD_PAIRS.length}`);
 }
 
-
 const LIFE_PROMPTS = [
   '마라톤','번지점프','소개팅','해외여행','고백','이별','면접','아르바이트','지각','결석',
   '전학','자취','이사','캠핑','등산','낚시','수영','스키','스노보드','서핑',
@@ -60,25 +59,20 @@ const ORDINALS = [
 
 const state = {
   totalPlayers: 5,
-  ripleyCount: 4,
-  citizenCount: 1,
   players: [],
   roles: [],
   pairIndex: null,
-  ripleyWord: '',
   citizenWord: '',
+  ripleyWord: '',
   revealIndex: 0,
   speakerIndex: 0,
-  confessionIndex: 0,
-  confessionAnswers: [],
   votes: [],
   currentVoter: 0,
-  phase: 'menu',
   result: null,
   wordGuess: '',
+  phase: 'menu',
   secretTimer: null
 };
-
 
 const lifeState = {
   totalPlayers: 5,
@@ -153,9 +147,22 @@ function hideModal() {
   modal.classList.add('hidden');
 }
 
+function shuffle(items) {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function normalizeWord(value) {
+  return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+}
+
 function getUsedPairs() {
   try {
-    const parsed = JSON.parse(localStorage.getItem('ripley-used-pairs') || '[]');
+    const parsed = JSON.parse(localStorage.getItem('ripley-used-pairs-v10') || '[]');
     return Array.isArray(parsed) ? parsed.filter(Number.isInteger) : [];
   } catch {
     return [];
@@ -169,28 +176,8 @@ function choosePairIndex() {
   const available = WORD_PAIRS.map((_, i) => i).filter(i => !usedSet.has(i));
   const picked = available[Math.floor(Math.random() * available.length)];
   used.push(picked);
-  try {
-    localStorage.setItem('ripley-used-pairs', JSON.stringify(used));
-  } catch {}
+  try { localStorage.setItem('ripley-used-pairs-v10', JSON.stringify(used)); } catch {}
   return picked;
-}
-
-function shuffle(items) {
-  const arr = [...items];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-function validateConfig(total, ripley, citizen) {
-  if (![total, ripley, citizen].every(Number.isInteger)) return '인원수는 정수로 입력해 주세요.';
-  if (total < 3 || total > 12) return '총 인원은 3명부터 12명까지 가능합니다.';
-  if (ripley < 1 || citizen < 1) return '리플리와 시민은 각각 최소 1명이어야 합니다.';
-  if (ripley + citizen !== total) return '리플리 수와 시민 수의 합이 총 인원과 같아야 합니다.';
-  if (ripley <= citizen) return '이 게임에서는 리플리가 다수여야 합니다. 리플리 수를 시민 수보다 많게 설정해 주세요.';
-  return '';
 }
 
 function prepareRound() {
@@ -198,16 +185,11 @@ function prepareRound() {
   state.pairIndex = choosePairIndex();
   const pair = WORD_PAIRS[state.pairIndex];
   const flip = Math.random() < 0.5;
-  state.ripleyWord = pair[flip ? 1 : 0];
-  state.citizenWord = pair[flip ? 0 : 1];
-  state.roles = shuffle([
-    ...Array(state.ripleyCount).fill('ripley'),
-    ...Array(state.citizenCount).fill('citizen')
-  ]);
+  state.citizenWord = pair[flip ? 1 : 0];
+  state.ripleyWord = pair[flip ? 0 : 1];
+  state.roles = shuffle(['ripley', ...Array(state.totalPlayers - 1).fill('citizen')]);
   state.revealIndex = 0;
   state.speakerIndex = 0;
-  state.confessionIndex = 0;
-  state.confessionAnswers = [];
   state.votes = [];
   state.currentVoter = 0;
   state.result = null;
@@ -215,23 +197,19 @@ function prepareRound() {
 }
 
 function playerWord(index) {
-  return state.roles[index] === 'citizen' ? state.citizenWord : state.ripleyWord;
+  return state.roles[index] === 'ripley' ? state.ripleyWord : state.citizenWord;
+}
+
+function ripleyIndex() {
+  return state.roles.indexOf('ripley');
 }
 
 function citizenIndices() {
   return state.roles.map((role, i) => role === 'citizen' ? i : -1).filter(i => i >= 0);
 }
 
-function ripleyIndices() {
-  return state.roles.map((role, i) => role === 'ripley' ? i : -1).filter(i => i >= 0);
-}
-
-function majorityThreshold() {
-  return Math.floor(state.totalPlayers / 2) + 1;
-}
-
-function normalizeWord(value) {
-  return String(value || '').trim().replace(/\s+/g, '').toLowerCase();
+function roleName(index) {
+  return state.roles[index] === 'ripley' ? '리플리' : '시민';
 }
 
 function showMenu() {
@@ -239,7 +217,7 @@ function showMenu() {
     <div class="hero hero-minimal">
       <span class="eyebrow">1 PHONE · SOCIAL DEDUCTION</span>
       <div class="logo">R<span class="i">I</span>PLEY</div>
-      <p class="tagline">같은 단어인가, 나만 다른가.</p>
+      <p class="tagline">믿게 만들거나, 들켜라.</p>
     </div>
     <div class="game-grid game-grid-minimal">
       <button class="game-card game-card-play" id="citizenGame" type="button">
@@ -262,24 +240,21 @@ function showIntro() {
   render(`
     <div class="panel compact-panel intro-panel minimal-panel">
       <span class="eyebrow">리플리 – 시민을 속여라</span>
-      <h1 class="page-title">승리 조건</h1>
-
+      <h1 class="page-title">누가 다른가?</h1>
       <div class="win-condition-grid simple-win-grid">
         <div class="win-card ripley-win-card">
-          <span class="win-role">리플리</span>
-          <b>시민을 찾고, 단어를 숨겨라</b>
+          <span class="win-role">리플리 1명</span>
+          <b>시민인 척 숨고 단어를 훔쳐라</b>
         </div>
         <div class="win-card citizen-win-card">
-          <span class="win-role">시민</span>
-          <b>숨거나, 잡혀도 단어를 맞혀라</b>
+          <span class="win-role">시민 다수</span>
+          <b>리플리를 찾되 단어는 숨겨라</b>
         </div>
       </div>
-
       <div class="flow-strip" aria-label="게임 진행 순서">
-        <span><b>1</b>단어</span><i>›</i><span><b>2</b>발언·압박</span><i>›</i><span><b>3</b>자수</span><i>›</i><span><b>4</b>투표·역전</span>
+        <span><b>1</b>단어</span><i>›</i><span><b>2</b>설명</span><i>›</i><span><b>3</b>심문</span><i>›</i><span><b>4</b>투표</span><i>›</i><span><b>5</b>역전</span>
       </div>
-      <div class="micro-rule"><b>거짓말 가능</b> · 시민이 잡히면 리플리 단어 추리</div>
-
+      <div class="micro-rule"><b>아무도 자신의 역할을 모릅니다.</b></div>
       <div class="btn-row action-row">
         <button id="setupBtn" class="btn btn-primary" type="button">게임 설정</button>
       </div>
@@ -289,29 +264,26 @@ function showIntro() {
 }
 
 function showSetup() {
+  const citizens = Math.max(3, state.totalPlayers - 1);
   render(`
     <div class="panel minimal-panel">
       <span class="eyebrow">GAME SETUP</span>
       <h1 class="page-title">인원 설정</h1>
-
       <div class="role-config">
         <label class="count-control">
           <span class="count-label">총 인원</span>
-          <input id="totalPlayers" class="number-input" type="number" min="3" max="12" inputmode="numeric" value="${state.totalPlayers}" />
+          <input id="totalPlayers" class="number-input" type="number" min="4" max="12" inputmode="numeric" value="${state.totalPlayers}" />
         </label>
-        <label class="count-control ripley-box">
+        <div class="count-control ripley-box">
           <span class="count-label">리플리</span>
-          <input id="ripleyCount" class="number-input" type="number" min="1" max="11" inputmode="numeric" value="${state.ripleyCount}" />
-        </label>
-        <label class="count-control citizen-box">
+          <div class="number-input" style="display:grid;place-items:center">1</div>
+        </div>
+        <div class="count-control citizen-box">
           <span class="count-label">시민</span>
-          <input id="citizenCount" class="number-input" type="number" min="1" max="5" inputmode="numeric" value="${state.citizenCount}" />
-        </label>
+          <div id="citizenCount" class="number-input" style="display:grid;place-items:center">${citizens}</div>
+        </div>
       </div>
-
-      <div id="setupSummary" class="setup-summary"></div>
       <div id="setupError" class="setup-error hidden"></div>
-
       <div class="btn-row">
         <button id="startRoundBtn" class="btn btn-primary" type="button">게임 시작</button>
       </div>
@@ -319,51 +291,27 @@ function showSetup() {
   `, 'setup');
 
   const totalEl = document.getElementById('totalPlayers');
-  const ripleyEl = document.getElementById('ripleyCount');
   const citizenEl = document.getElementById('citizenCount');
-  const startBtn = document.getElementById('startRoundBtn');
   const errorEl = document.getElementById('setupError');
-  const summaryEl = document.getElementById('setupSummary');
-
-  function refreshSetup(changed) {
-    let total = Number(totalEl.value);
-    let ripley = Number(ripleyEl.value);
-    let citizen = Number(citizenEl.value);
-
-    if (changed === 'total' && Number.isInteger(total) && total >= 3 && total <= 12) {
-      citizen = Math.max(1, Math.min(citizen || 1, Math.floor((total - 1) / 2)));
-      ripley = total - citizen;
-      ripleyEl.value = ripley;
-      citizenEl.value = citizen;
-    }
-
-    const error = validateConfig(total, ripley, citizen);
+  const startBtn = document.getElementById('startRoundBtn');
+  const refresh = () => {
+    const total = Number(totalEl.value);
+    const error = !Number.isInteger(total) || total < 4 || total > 12 ? '총 인원은 4명부터 12명까지 가능합니다.' : '';
+    citizenEl.textContent = Number.isInteger(total) ? Math.max(0, total - 1) : '-';
     startBtn.disabled = Boolean(error);
     errorEl.classList.toggle('hidden', !error);
     errorEl.textContent = error;
-
-    summaryEl.innerHTML = !error
-      ? `<b>${total}명</b><span>리플리 ${ripley} · 시민 ${citizen}</span>`
-      : `<b>설정을 확인하세요</b>`;
-  }
-
-  totalEl.addEventListener('input', () => refreshSetup('total'));
-  ripleyEl.addEventListener('input', () => refreshSetup('ripley'));
-  citizenEl.addEventListener('input', () => refreshSetup('citizen'));
-  refreshSetup();
+  };
+  totalEl.addEventListener('input', refresh);
+  refresh();
 
   startBtn.addEventListener('click', () => {
     const total = Number(totalEl.value);
-    const ripley = Number(ripleyEl.value);
-    const citizen = Number(citizenEl.value);
-    const error = validateConfig(total, ripley, citizen);
-    if (error) {
-      toast(error);
+    if (!Number.isInteger(total) || total < 4 || total > 12) {
+      toast('총 인원은 4명부터 12명까지 가능합니다.');
       return;
     }
     state.totalPlayers = total;
-    state.ripleyCount = ripley;
-    state.citizenCount = citizen;
     prepareRound();
     showHandoff();
   });
@@ -376,9 +324,7 @@ function showHandoff() {
       <span class="player-chip">단어 ${i + 1} / ${state.totalPlayers}</span>
       <div class="big-player">${esc(state.players[i])}</div>
       <p class="handoff-note">휴대폰을 넘겨주세요.</p>
-      <div class="btn-row">
-        <button id="revealBtn" class="btn btn-primary" type="button">단어 확인</button>
-      </div>
+      <div class="btn-row"><button id="revealBtn" class="btn btn-primary" type="button">단어 확인</button></div>
     </div>
   `, 'reveal-handoff');
   document.getElementById('revealBtn').addEventListener('click', showSecretWord);
@@ -391,10 +337,8 @@ function showSecretWord() {
       <div class="word-label">당신의 단어</div>
       <div class="secret-word">${esc(playerWord(i))}</div>
       <div class="timer-track"><div class="timer-bar"></div></div>
-      <p class="micro-copy">6초 후 자동으로 가려집니다.</p>
-      <div class="btn-row">
-        <button id="seenBtn" class="btn btn-primary" type="button">확인</button>
-      </div>
+      <p class="micro-copy">역할은 공개되지 않습니다.</p>
+      <div class="btn-row"><button id="seenBtn" class="btn btn-primary" type="button">확인</button></div>
     </div>
   `, 'reveal-word');
 
@@ -414,14 +358,12 @@ function showReady() {
   render(`
     <div class="panel handoff minimal-panel">
       <span class="eyebrow">READY</span>
-      <div class="big-player">모두 확인 완료</div>
-      <p class="handoff-note">첫 번째 플레이어부터 한 번씩 설명하세요.</p>
-      <div class="btn-row">
-        <button id="beginTalkBtn" class="btn btn-primary" type="button">발언 시작</button>
-      </div>
+      <div class="big-player">설명 시작</div>
+      <p class="handoff-note">너무 많이 알려주지 마세요.</p>
+      <div class="btn-row"><button id="beginTalkBtn" class="btn btn-primary" type="button">시작</button></div>
     </div>
   `, 'ready');
-  document.getElementById('beginTalkBtn').addEventListener('click', showSpeaker);
+  document.getElementById('beginTalkBtn').addEventListener('click', () => { state.speakerIndex = 0; showSpeaker(); });
 }
 
 function showSpeaker() {
@@ -430,165 +372,37 @@ function showSpeaker() {
   render(`
     <div class="panel minimal-panel">
       <div class="progress-wrap">
-        <div class="progress-meta"><span>발언</span><span>${i + 1} / ${state.totalPlayers}</span></div>
+        <div class="progress-meta"><span>설명</span><span>${i + 1} / ${state.totalPlayers}</span></div>
         <div class="progress"><div style="width:${pct}%"></div></div>
       </div>
       <div class="speaker-box speaker-box-minimal">
         <div class="speaker-name">${esc(state.players[i])}</div>
-        <div class="speaker-help">단어를 말하지 말고 설명하세요.</div>
+        <div class="speaker-help">자기 단어를 기준으로 한마디.</div>
       </div>
-      <div class="btn-row">
-        <button id="speechDoneBtn" class="btn btn-primary" type="button">다음</button>
-      </div>
+      <div class="btn-row"><button id="speechDoneBtn" class="btn btn-primary" type="button">다음</button></div>
     </div>
   `, 'speaker');
-
   document.getElementById('speechDoneBtn').addEventListener('click', () => {
-    if (state.speakerIndex + 1 >= state.totalPlayers) showSpeechComplete();
-    else {
-      state.speakerIndex += 1;
-      showSpeaker();
-    }
+    if (state.speakerIndex + 1 >= state.totalPlayers) showInterrogation();
+    else { state.speakerIndex += 1; showSpeaker(); }
   });
 }
 
-function showSpeechComplete() {
+function showInterrogation() {
   render(`
     <div class="panel handoff minimal-panel">
-      <span class="eyebrow">PRESSURE</span>
-      <div class="big-player">압박 시간</div>
+      <span class="eyebrow">INTERROGATION</span>
+      <div class="big-player">심문</div>
       <p class="handoff-note">각자 한 명에게 질문 1회.</p>
-      <div class="micro-rule rule-pill"><b>답변은 거짓말 가능 · 단어 직접 공개 금지</b></div>
-      <div class="btn-row">
-        <button id="confessionStartBtn" class="btn btn-primary" type="button">자수 시작</button>
-      </div>
+      <div class="micro-rule rule-pill"><b>답변은 단어 기준 · 정치 발언은 자유</b></div>
+      <div class="btn-row"><button id="voteStartBtn" class="btn btn-primary" type="button">비밀 투표</button></div>
     </div>
-  `, 'speech-complete');
-  document.getElementById('confessionStartBtn').addEventListener('click', () => {
-    state.confessionIndex = 0;
-    state.confessionAnswers = [];
-    showConfessionHandoff();
+  `, 'interrogation');
+  document.getElementById('voteStartBtn').addEventListener('click', () => {
+    state.currentVoter = 0;
+    state.votes = [];
+    showVoteHandoff();
   });
-}
-
-function showConfessionHandoff() {
-  const i = state.confessionIndex;
-  render(`
-    <div class="panel handoff minimal-panel">
-      <span class="player-chip">자수 ${i + 1} / ${state.totalPlayers}</span>
-      <div class="big-player">${esc(state.players[i])}</div>
-      <p class="handoff-note">휴대폰을 넘겨주세요.</p>
-      <div class="vote-status">${Array.from({length: state.totalPlayers}, (_, d) => `<span class="vote-dot ${d < i ? 'done' : ''}"></span>`).join('')}</div>
-      <div class="btn-row">
-        <button id="openConfessionBtn" class="btn btn-primary" type="button">선택</button>
-      </div>
-    </div>
-  `, 'confession-handoff');
-  document.getElementById('openConfessionBtn').addEventListener('click', showPrivateConfession);
-}
-
-function showPrivateConfession() {
-  const i = state.confessionIndex;
-  render(`
-    <div class="panel vote-private minimal-panel">
-      <span class="player-chip">${i + 1} / ${state.totalPlayers}</span>
-      <h1 class="page-title decision-title">자수하시겠습니까?</h1>
-      <p class="micro-copy">시민이어도 단어를 맞혀야 승리합니다.</p>
-      <div class="decision-grid">
-        <button id="confessYesBtn" class="btn decision-yes" type="button">예</button>
-        <button id="confessNoBtn" class="btn decision-no" type="button">아니요</button>
-      </div>
-    </div>
-  `, 'confession-private');
-
-  document.getElementById('confessYesBtn').addEventListener('click', () => recordConfession(i, true));
-  document.getElementById('confessNoBtn').addEventListener('click', () => recordConfession(i, false));
-}
-
-function showConfessionCover() {
-  render(`
-    <div class="panel handoff minimal-panel">
-      <span class="player-chip">저장 완료</span>
-      <div class="big-player">선택 완료</div>
-      <div class="btn-row">
-        <button id="nextConfessionBtn" class="btn btn-primary" type="button">다음 플레이어</button>
-      </div>
-    </div>
-  `, 'confession-cover');
-  document.getElementById('nextConfessionBtn').addEventListener('click', showConfessionHandoff);
-}
-
-function recordConfession(idx, answer) {
-  state.confessionAnswers[idx] = answer;
-  state.confessionIndex += 1;
-
-  if (state.confessionIndex >= state.totalPlayers) {
-    resolveConfessionRound();
-  } else {
-    showConfessionCover();
-  }
-}
-
-function resolveConfessionRound() {
-  const confessed = state.confessionAnswers
-    .map((answer, i) => answer ? i : -1)
-    .filter(i => i >= 0);
-
-  if (confessed.length === 0) {
-    showVotingIntro();
-    return;
-  }
-
-  const confessedCitizens = confessed.filter(i => state.roles[i] === 'citizen');
-  const confessedRipleys = confessed.filter(i => state.roles[i] === 'ripley');
-  const nonConfessedCitizens = citizenIndices().filter(i => !state.confessionAnswers[i]);
-  const citizenOnlySuccess = confessedCitizens.length > 0 && confessedRipleys.length === 0;
-
-  if (citizenOnlySuccess) {
-    state.result = {
-      type: 'word-guess-pending',
-      source: 'confession',
-      confessed,
-      confessedCitizens,
-      confessedRipleys,
-      nonConfessedCitizens
-    };
-    showResultReady('자수 선택 완료');
-    return;
-  }
-
-  const penaltyIndices = [...confessedRipleys, ...nonConfessedCitizens].sort((a, b) => a - b);
-  state.result = {
-    type: 'confession-result',
-    confessed,
-    confessedCitizens,
-    confessedRipleys,
-    nonConfessedCitizens,
-    citizenOnlySuccess: false,
-    penaltyIndices
-  };
-  showResultReady('모든 자수 선택이 완료되었습니다');
-}
-
-function showVotingIntro() {
-  render(`
-    <div class="panel compact-panel handoff minimal-panel">
-      <span class="eyebrow">SECRET VOTE</span>
-      <div class="big-player">비밀 투표</div>
-      <p class="handoff-note">시민이라고 생각하는 사람 한 명을 고르세요.</p>
-      <div class="tie-notice">동률 = 시민 승리</div>
-      <div class="btn-row action-row">
-        <button id="startVoteBtn" class="btn btn-primary" type="button">투표 시작</button>
-      </div>
-    </div>
-  `, 'vote-intro');
-  document.getElementById('startVoteBtn').addEventListener('click', startVoting);
-}
-
-function startVoting() {
-  state.currentVoter = 0;
-  state.votes = [];
-  showVoteHandoff();
 }
 
 function showVoteHandoff() {
@@ -599,9 +413,7 @@ function showVoteHandoff() {
       <div class="big-player">${esc(state.players[i])}</div>
       <p class="handoff-note">휴대폰을 넘겨주세요.</p>
       <div class="vote-status">${Array.from({length: state.totalPlayers}, (_, d) => `<span class="vote-dot ${d < i ? 'done' : ''}"></span>`).join('')}</div>
-      <div class="btn-row">
-        <button id="voteOpenBtn" class="btn btn-primary" type="button">투표하기</button>
-      </div>
+      <div class="btn-row"><button id="voteOpenBtn" class="btn btn-primary" type="button">투표하기</button></div>
     </div>
   `, 'vote-handoff');
   document.getElementById('voteOpenBtn').addEventListener('click', showVoteChoices);
@@ -612,16 +424,14 @@ function showVoteChoices() {
   render(`
     <div class="panel vote-private minimal-panel vote-choice-panel">
       <span class="player-chip">투표 ${voter + 1} / ${state.totalPlayers}</span>
-      <h1 class="page-title vote-title">누가 시민 같나요?</h1>
+      <h1 class="page-title vote-title">누가 리플리인가요?</h1>
       <div class="vote-grid dynamic-vote-grid">
-        ${state.players.map((p, i) => `<button class="person-btn" data-vote="${i}" type="button">${esc(p)}</button>`).join('')}
+        ${state.players.map((p, i) => i === voter ? '' : `<button class="person-btn" data-vote="${i}" type="button">${esc(p)}</button>`).join('')}
       </div>
     </div>
   `, 'vote-choice');
-
   document.querySelectorAll('[data-vote]').forEach(btn => btn.addEventListener('click', () => {
-    const target = Number(btn.dataset.vote);
-    state.votes[voter] = target;
+    state.votes[voter] = Number(btn.dataset.vote);
     state.currentVoter += 1;
     if (state.currentVoter >= state.totalPlayers) resolveVote();
     else showVoteCover();
@@ -633,48 +443,42 @@ function showVoteCover() {
     <div class="panel handoff minimal-panel">
       <span class="player-chip">저장 완료</span>
       <div class="big-player">투표 완료</div>
-      <div class="btn-row">
-        <button id="nextVoterBtn" class="btn btn-primary" type="button">다음 플레이어</button>
-      </div>
+      <div class="btn-row"><button id="nextVoterBtn" class="btn btn-primary" type="button">다음 플레이어</button></div>
     </div>
   `, 'vote-cover');
   document.getElementById('nextVoterBtn').addEventListener('click', showVoteHandoff);
 }
 
-function resolveVote() {
-  const citizenSet = new Set(citizenIndices());
-  const citizenTargetVotes = state.votes.filter(v => citizenSet.has(v)).length;
-  const ripleyTargetVotes = state.totalPlayers - citizenTargetVotes;
-  const isTie = citizenTargetVotes === ripleyTargetVotes;
-
-  if (citizenTargetVotes > ripleyTargetVotes) {
-    state.result = {
-      type: 'word-guess-pending',
-      source: 'vote',
-      citizenTargetVotes,
-      ripleyTargetVotes,
-      isTie
-    };
-  } else {
-    state.result = {
-      type: 'citizen-vote-win',
-      citizenTargetVotes,
-      ripleyTargetVotes,
-      isTie
-    };
-  }
-  showResultReady('모든 비밀 투표가 완료되었습니다');
+function voteCounts() {
+  return state.players.map((_, i) => state.votes.filter(v => v === i).length);
 }
 
-function showResultReady(message) {
+function resolveVote() {
+  const counts = voteCounts();
+  const maxVotes = Math.max(...counts);
+  const topIndices = counts.map((count, i) => count === maxVotes ? i : -1).filter(i => i >= 0);
+  const ripley = ripleyIndex();
+  const caught = topIndices.length === 1 && topIndices[0] === ripley;
+  state.result = {
+    stage: caught ? 'caught-pending' : 'escape',
+    caught,
+    counts,
+    maxVotes,
+    topIndices,
+    ripleyIndex: ripley,
+    guess: '',
+    correct: false
+  };
+  showResultReady();
+}
+
+function showResultReady() {
   render(`
     <div class="panel handoff minimal-panel">
       <span class="eyebrow">RESULT</span>
-      <div class="big-player">결과 준비 완료</div>
+      <div class="big-player">판정 준비 완료</div>
       <p class="handoff-note">휴대폰을 중앙에 놓아주세요.</p>
-      <div class="btn-row">
-        <button id="revealResultBtn" class="btn btn-primary" type="button">결과 확인</button>
-      </div>
+      <div class="btn-row"><button id="revealResultBtn" class="btn btn-primary" type="button">결과 발표</button></div>
     </div>
   `, 'result-ready');
   document.getElementById('revealResultBtn').addEventListener('click', playModeOneResultReveal);
@@ -714,7 +518,7 @@ function revealStage(kicker, main, sub = '') {
 function runCountdown(finalFn) {
   let n = 3;
   const tick = () => {
-    revealStage('FINAL', String(n), '');
+    revealStage('FINAL', String(n));
     playDrumBeat(n === 1);
     if (navigator.vibrate) navigator.vibrate(n === 1 ? 90 : 45);
     n -= 1;
@@ -724,242 +528,128 @@ function runCountdown(finalFn) {
   tick();
 }
 
-function revealImpact(kicker, main, sub, finalFn, delay = 1150) {
-  revealStage(kicker, main, sub);
-  playDrumBeat(true);
-  if (navigator.vibrate) navigator.vibrate([70, 45, 110]);
-  setTimeout(finalFn, delay);
-}
-
 function showManualReveal(kicker, main, sub, buttonLabel, onClick) {
   render(`
     <div class="panel handoff minimal-panel suspense-panel">
       <span class="eyebrow">${esc(kicker)}</span>
       <div class="suspense-main">${esc(main)}</div>
       ${sub ? `<p class="handoff-note">${esc(sub)}</p>` : ''}
-      <div class="btn-row">
-        <button id="manualRevealBtn" class="btn btn-primary" type="button">${esc(buttonLabel)}</button>
-      </div>
+      <div class="btn-row"><button id="manualRevealBtn" class="btn btn-primary" type="button">${esc(buttonLabel)}</button></div>
     </div>
   `, 'manual-reveal');
   document.getElementById('manualRevealBtn').addEventListener('click', onClick);
 }
 
-function showModeOneFinalButton(kicker, main, sub = '') {
-  showManualReveal(kicker, main, sub, '최종 결과 보기', showResult);
+function playModeOneResultReveal() {
+  const r = state.result;
+  const topLabel = r.topIndices.map(i => ordinal(i)).join(' · ');
+  showManualReveal(
+    'TOP VOTE',
+    r.topIndices.length === 1 ? topLabel : '동률',
+    r.topIndices.length === 1 ? `${r.maxVotes}표` : `${topLabel} · ${r.maxVotes}표`,
+    '정체 공개',
+    () => runCountdown(() => {
+      if (r.caught) {
+        showManualReveal('IDENTITY', '리플리', `${ordinal(r.ripleyIndex)} 검거`, '마지막 기회', showRipleyGuessHandoff);
+      } else if (r.topIndices.length === 1) {
+        showManualReveal('IDENTITY', '시민', `${ordinal(r.topIndices[0])} 오지목`, '최종 결과 보기', showResult);
+      } else {
+        showManualReveal('VOTE', '검거 실패', '동률은 리플리 생존', '최종 결과 보기', showResult);
+      }
+    })
+  );
 }
 
-function showWordGuess() {
+function showRipleyGuessHandoff() {
   const r = state.result;
-  const citizens = r.source === 'confession' ? r.confessedCitizens : citizenIndices();
-  const citizenLabel = citizens.map(i => ordinal(i)).join(' · ');
   render(`
     <div class="panel handoff minimal-panel">
       <span class="eyebrow">LAST CHANCE</span>
-      <div class="big-player">시민의 마지막 추리</div>
-      <p class="handoff-note">리플리들의 단어를 맞히세요.</p>
-      <div class="rule-pill">시민 · <b>${esc(citizenLabel)}</b></div>
+      <div class="big-player">${esc(ordinal(r.ripleyIndex))}</div>
+      <p class="handoff-note">리플리에게 휴대폰을 넘겨주세요.</p>
+      <div class="btn-row"><button id="openGuessBtn" class="btn btn-primary" type="button">단어 맞히기</button></div>
+    </div>
+  `, 'guess-handoff');
+  document.getElementById('openGuessBtn').addEventListener('click', showRipleyGuess);
+}
+
+function showRipleyGuess() {
+  render(`
+    <div class="panel handoff minimal-panel">
+      <span class="eyebrow">LAST CHANCE</span>
+      <div class="big-player">시민의 단어는?</div>
       <input id="wordGuessInput" class="word-guess-input" type="text" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="단어 입력" />
-      <div class="btn-row">
-        <button id="lockWordGuessBtn" class="btn btn-primary" type="button">추측 확정</button>
-      </div>
+      <div class="btn-row"><button id="lockGuessBtn" class="btn btn-primary" type="button">추측 확정</button></div>
     </div>
   `, 'word-guess');
-
   const input = document.getElementById('wordGuessInput');
   const submit = () => {
     const guess = input.value.trim();
     if (!guess) { toast('단어를 입력해 주세요.'); return; }
     state.wordGuess = guess;
-    const correct = normalizeWord(guess) === normalizeWord(state.ripleyWord);
-    const base = state.result;
-    const source = base.source;
-    let penaltyIndices;
-    if (correct) {
-      penaltyIndices = ripleyIndices();
-    } else if (source === 'vote') {
-      penaltyIndices = citizenIndices();
-    } else {
-      penaltyIndices = base.confessedCitizens;
-    }
-    state.result = {
-      ...base,
-      type: 'word-guess-result',
-      guess,
-      correct,
-      penaltyIndices
-    };
+    state.result.guess = guess;
+    state.result.correct = normalizeWord(guess) === normalizeWord(state.citizenWord);
+    state.result.stage = 'guess-complete';
     showManualReveal('LOCKED', '추측 잠금 완료', guess, '정답 공개', () => {
       runCountdown(() => {
         showManualReveal(
-          correct ? 'CORRECT' : 'WRONG',
-          state.ripleyWord,
-          correct ? '시민 역전 성공' : '리플리 단어 방어 성공',
+          state.result.correct ? 'CORRECT' : 'WRONG',
+          state.citizenWord,
+          state.result.correct ? '리플리 역전 성공' : '시민이 단어를 지켰습니다',
           '최종 결과 보기',
           showResult
         );
       });
     });
   };
-  document.getElementById('lockWordGuessBtn').addEventListener('click', submit);
+  document.getElementById('lockGuessBtn').addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   setTimeout(() => input.focus(), 50);
 }
 
-function playModeOneResultReveal() {
-  const r = state.result;
-
-  if (r.type === 'word-guess-pending') {
-    if (r.source === 'vote') {
-      showManualReveal(
-        'SECRET VOTE',
-        `${r.citizenTargetVotes} : ${r.ripleyTargetVotes}`,
-        '시민 지목 · 리플리 지목',
-        '판정 공개',
-        () => runCountdown(() => showManualReveal('CAUGHT', '시민 검거', '하지만 아직 끝나지 않았습니다.', '마지막 추리', showWordGuess))
-      );
-    } else {
-      showManualReveal(
-        'CONFESSION',
-        `자수 ${r.confessed.length}명`,
-        '자수자가 정말 시민일까',
-        '판정 공개',
-        () => runCountdown(() => showManualReveal('CONFESSION', '시민 자수 성공', '단어를 맞혀야 최종 승리합니다.', '마지막 추리', showWordGuess))
-      );
-    }
-    return;
-  }
-
-  if (r.type === 'confession-result') {
-    let main = '자수 판정';
-    if (r.confessedCitizens.length && r.confessedRipleys.length) main = '양쪽 모두 자수';
-    else if (r.confessedRipleys.length) main = '리플리 오자수';
-    showManualReveal(
-      'CONFESSION',
-      `자수 ${r.confessed.length}명`,
-      '정체를 확인합니다.',
-      '판정 공개',
-      () => runCountdown(() => showModeOneFinalButton('CONFESSION', main, `시민 ${r.confessedCitizens.length} · 리플리 ${r.confessedRipleys.length}`))
-    );
-    return;
-  }
-
-  showManualReveal(
-    r.isTie ? 'TIE' : 'SECRET VOTE',
-    `${r.citizenTargetVotes} : ${r.ripleyTargetVotes}`,
-    `시민 지목 · 리플리 지목${r.isTie ? ' · 동률' : ''}`,
-    '판정 공개',
-    () => runCountdown(() => showModeOneFinalButton(r.isTie ? 'TIE' : 'VOTE RESULT', '시민 승리', r.isTie ? '동률은 시민 승리' : '시민이 살아남았습니다.'))
-  );
-}
-
-function voteCounts() {
-  return state.players.map((_, i) => state.votes.filter(v => v === i).length);
-}
-
-function roleName(index) {
-  return state.roles[index] === 'citizen' ? '시민' : '리플리';
-}
-
 function showResult() {
   const r = state.result;
-  const isConfession = r.type === 'confession-result';
-  const isWordGuess = r.type === 'word-guess-result';
-  const counts = state.votes.length === state.totalPlayers ? voteCounts() : null;
-
-  let title = '';
-  let kicker = '';
-  let penaltyIndices = [];
-  let scoreHtml = '';
-
-  if (isWordGuess) {
-    title = r.correct ? '시민 역전 승리' : '리플리 승리';
-    kicker = r.correct ? 'WORD STEAL' : 'WORD DEFENSE';
-    penaltyIndices = r.penaltyIndices || [];
-    scoreHtml = `
-      <div class="result-score confession-score">
-        <div><span>시민 추측</span><strong class="guess-result-word">${esc(r.guess)}</strong></div>
-        <div><span>정답</span><strong class="guess-result-word">${esc(state.ripleyWord)}</strong></div>
-      </div>`;
-  } else if (isConfession) {
-    title = '자수 결과';
-    kicker = 'CONFESSION';
-    penaltyIndices = r.penaltyIndices;
-    scoreHtml = `
-      <div class="result-score confession-score">
-        <div><span>시민 자수</span><strong>${r.confessedCitizens.length}</strong></div>
-        <div><span>리플리 자수</span><strong>${r.confessedRipleys.length}</strong></div>
-      </div>`;
-  } else {
-    title = '시민 승리';
-    kicker = r.isTie ? '동률 · 시민 승리' : 'VOTE RESULT';
-    penaltyIndices = ripleyIndices();
-    scoreHtml = `
-      <div class="versus-score">
-        <div class="side citizen-side"><span>시민 지목</span><strong>${r.citizenTargetVotes}</strong></div>
-        <div class="vs-mark">:</div>
-        <div class="side ripley-side"><span>리플리 지목</span><strong>${r.ripleyTargetVotes}</strong></div>
-      </div>`;
-  }
-
+  const escaped = !r.caught;
+  const ripleyWin = escaped || r.correct;
+  const penaltyIndices = ripleyWin ? citizenIndices() : [r.ripleyIndex];
   const penaltyLabels = penaltyIndices.map(i => ordinal(i));
-  const penaltyHtml = penaltyLabels.length
-    ? `<div class="penalty-hero"><span class="penalty-kicker">🚨 벌칙 ${penaltyLabels.length}명</span><div class="penalty-names">${penaltyLabels.map(esc).join('<span>·</span>')}</div></div>`
-    : `<div class="penalty-hero safe"><span class="penalty-kicker">✓ 벌칙 없음</span><div class="penalty-names">모두 생존</div></div>`;
+  const counts = r.counts;
 
-  let detailRows = '';
-  if (isConfession) {
-    detailRows = state.players.map((p, i) => {
-      const confessed = Boolean(state.confessionAnswers[i]);
-      const penalized = penaltyIndices.includes(i);
-      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(p)}</span><small>${roleName(i)} · ${confessed ? '자수' : '미자수'}</small><b>${penalized ? '벌칙' : '생존'}</b></div>`;
-    }).join('');
-  } else if (counts) {
-    detailRows = counts.map((c, i) => {
-      const penalized = penaltyIndices.includes(i);
-      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(state.players[i])}</span><small>${roleName(i)}</small><b>${c}표</b></div>`;
-    }).join('');
-  } else {
-    detailRows = state.players.map((p, i) => {
-      const penalized = penaltyIndices.includes(i);
-      return `<div class="detail-row ${penalized ? 'is-penalty' : 'is-safe'}"><span>${esc(p)}</span><small>${roleName(i)}</small><b>${penalized ? '벌칙' : '생존'}</b></div>`;
-    }).join('');
-  }
+  const detailRows = counts.map((count, i) => `
+    <div class="detail-row ${penaltyIndices.includes(i) ? 'is-penalty' : 'is-safe'}">
+      <span>${esc(state.players[i])}</span><small>${roleName(i)}</small><b>${count}표</b>
+    </div>`).join('');
 
   render(`
     <div class="panel result result-compact result-ultra-compact">
-      <div class="result-topline"><span class="result-kicker">${kicker}</span></div>
-      <h1>${title}</h1>
-      ${scoreHtml}
-      ${penaltyHtml}
-
-      <div class="word-reveal-inline">
-        <div><span>리플리</span><b>${esc(state.ripleyWord)}</b></div>
-        <i>↔</i>
-        <div class="citizen-word"><span>시민</span><b>${esc(state.citizenWord)}</b></div>
+      <div class="result-topline"><span class="result-kicker">${ripleyWin ? 'RIPLEY WINS' : 'CITIZENS WIN'}</span></div>
+      <h1>${ripleyWin ? '리플리 승리' : '시민 승리'}</h1>
+      <div class="penalty-hero">
+        <span class="penalty-kicker">🚨 벌칙 ${penaltyLabels.length}명</span>
+        <div class="penalty-names">${penaltyLabels.map(esc).join('<span>·</span>')}</div>
       </div>
-
+      <div class="word-reveal-inline">
+        <div><span>시민</span><b>${esc(state.citizenWord)}</b></div>
+        <i>↔</i>
+        <div class="citizen-word"><span>리플리</span><b>${esc(state.ripleyWord)}</b></div>
+      </div>
+      <div class="micro-rule"><b>리플리 · ${esc(ordinal(r.ripleyIndex))}</b>${r.caught ? (r.correct ? ' · 단어 역전 성공' : ' · 단어 추리 실패') : ' · 검거 회피'}</div>
       <details class="result-details">
-        <summary>상세 보기</summary>
+        <summary>득표 상세</summary>
         <div class="detail-list">${detailRows}</div>
       </details>
-
       <div class="result-actions">
         <button id="againBtn" class="btn btn-primary" type="button">한 판 더</button>
-        <button id="setupAgainBtn" class="btn" type="button">설정</button>
+        <button id="setupAgainBtn" class="btn" type="button">인원</button>
         <button id="menuBtn" class="btn btn-ghost slim-btn" type="button">게임 선택</button>
       </div>
     </div>
   `, 'result');
 
-  document.getElementById('againBtn').addEventListener('click', () => {
-    prepareRound();
-    showHandoff();
-  });
+  document.getElementById('againBtn').addEventListener('click', () => { prepareRound(); showHandoff(); });
   document.getElementById('setupAgainBtn').addEventListener('click', showSetup);
   document.getElementById('menuBtn').addEventListener('click', showMenu);
 }
-
 
 function getUsedLifePrompts() {
   try {
@@ -1418,5 +1108,6 @@ document.addEventListener('visibilitychange', () => {
     toast('단어 화면이 열려 있었습니다. 다른 사람에게 보이지 않게 주의하세요.');
   }
 });
+
 
 showMenu();
